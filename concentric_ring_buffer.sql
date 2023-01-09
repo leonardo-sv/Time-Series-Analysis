@@ -36,7 +36,16 @@ DECLARE
   quantity integer := 0;
 BEGIN
  RAISE NOTICE 'Generating concentric ring buffers from % km to % km in % km steps at the %.', minimum, maximum, step, wkt_geom;
-  FOR d IN minimum..maximum BY step LOOP
+  INSERT INTO analysis.ring_buffer (latitude_center, longitude_center, outer_radius, inner_radius, geom) 
+    (
+     SELECT ST_Y(ST_CENTROID(ST_GeomFromText(wkt_geom,srid_geom))), ST_X(ST_CENTROID(ST_GeomFromText(wkt_geom,srid_geom))), minimum, 0, ST_Transform  
+     (    
+         ST_Buffer(ST_Transform(ST_CENTROID(ST_GeomFromText(wkt_geom,srid_geom)), 100002), (minimum * 1000), 'quad_segs=90'), 100002
+     )::geometry(Polygon, 100002)  
+   );
+  
+  
+  FOR d IN (minimum + 2*step)..maximum BY step * 2 LOOP
     INSERT INTO analysis.ring_buffer (latitude_center, longitude_center, outer_radius, inner_radius, geom) 
     (
      SELECT ST_Y(ST_CENTROID(ST_GeomFromText(wkt_geom,srid_geom))), ST_X(ST_CENTROID(ST_GeomFromText(wkt_geom,srid_geom))), d, d-step, ST_Transform  
@@ -49,6 +58,8 @@ BEGIN
      )::geometry(Polygon, 100002)  
    );
     quantity := quantity + 1;
+    RAISE NOTICE 'd % ', d;
+    RAISE NOTICE 'step % ', step;
  END LOOP;
   
   RAISE NOTICE 'Generated % concentric ring buffers.', quantity;
@@ -58,4 +69,4 @@ $$ LANGUAGE plpgsql;
 
 
 -- Example of use the function centroid_ring_buffers(minimum, maximum, step, srid_geom, srid_rings, wkt_geom)
-SELECT centroid_ring_buffers(10, 450, 5, ST_AsText(ST_CENTROID(geom))::text, 4674) FROM ibge.uf_2020 WHERE sigla_uf='RO';
+SELECT centroid_ring_buffers(10, 100, 5, ST_AsText(ST_CENTROID(geom))::text, 4674) FROM ibge.uf_2020 WHERE sigla_uf='RO';
