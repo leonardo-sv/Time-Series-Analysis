@@ -200,10 +200,58 @@ BEGIN
                                  (SELECT ST_TRANSFORM(geom, 4674) FROM rings_on_grid(%L))
                             ) AS geom
                    FROM prodes.%I AS prodes
-                   WHERE ST_INTERSECTS(prodes.geom::geometry(Polygon,4674), (SELECT ST_TRANSFORM(geom, 4674) FROM rings_on_grid(%L))) LIMIT 1;'  
+                   WHERE ST_INTERSECTS(prodes.geom::geometry(Polygon,4674), (SELECT ST_TRANSFORM(geom, 4674) FROM rings_on_grid(%L)));'  
                    ,grid_tile, v_table, grid_tile);
     END LOOP;
 END
 $$ LANGUAGE plpgsql;
 
+SELECT * FROM prodes_by_ring_grid('013017'); text ARRAYtext ARRAYRETURNS TABLE (
+BEGIN
+   FOR v_table IN
+      RETURN QUERY     END LOOP;
+END
+$$ LANGUAGE plpgsql;
+
 SELECT * FROM prodes_by_ring_grid('013017');
+    
+    
+    
+DROP FUNCTION IF EXISTS prodes_by_ring_grid(grid_tile varchar(254), table_label varchar(254), year_target integer);
+CREATE OR REPLACE FUNCTION prodes_by_ring_grid(grid_tile varchar(254), table_label varchar(254), year_target integer)
+  RETURNS TABLE (gid integer,
+                 id integer,
+                 origin_id integer,
+                 state character varying(99),
+                 path_row character varying(20),
+                 main_class character varying(254),
+                 class_name character varying(254),
+                 def_cloud numeric,
+                 julian_day integer,
+                 image_date date,
+                 year integer,
+                 area_km numeric,
+                 scene_id numeric,
+                 source character varying(50),
+                 satellite character varying(50),
+                 sensor character varying(50),
+                 geom geometry(Polygon,4674)) AS $$
+BEGIN
+    RETURN QUERY EXECUTE format('SELECT prodes.gid AS gid, prodes.id AS id, prodes.origin_id AS origin_id, prodes.state AS state,
+                             prodes.path_row AS path_row, prodes.main_class AS main_class, prodes.class_name AS class_name,
+                             prodes.def_cloud AS def_cloud, prodes.julian_day AS julian_day, prodes.image_date AS image_date,
+                             prodes.year AS year, prodes.area_km AS area_km, prodes.scene_id AS scene_id, prodes.source AS source,
+                             prodes.satellite AS satellite, prodes.sensor AS sensor,
+                             ST_INTERSECTION(
+                                 ST_BUFFER(prodes.geom::geometry(Polygon,4674), 0),
+                                 (SELECT ST_TRANSFORM(geom, 4674) FROM rings_on_grid(%L))
+                            ) AS geom
+                   FROM prodes.%I AS prodes
+                   WHERE ST_INTERSECTS(prodes.geom::geometry(Polygon,4674), (SELECT ST_TRANSFORM(geom, 4674) FROM rings_on_grid(%L)))
+                                AND prodes.year = %L::INTEGER
+                                ORDER BY prodes.image_date;'  
+                   ,grid_tile, table_label, grid_tile, year_target);
+END
+$$ LANGUAGE plpgsql;
+
+SELECT * FROM prodes_by_ring_grid('013017', 'incremento_anual', 2018);
