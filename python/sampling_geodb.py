@@ -37,9 +37,9 @@ def conn_db(json_pass):
 
     return conn
 
-def concentric_rings(minimum: int, maximum: int, step: int, wkt_point:str, srid_geom: int, connection: psycopg2.connect):
+def concentric_rings(minimum: int, maximum: int, step: int, size_ring:int, wkt_point:str, srid_geom: int, connection: psycopg2.connect):
     cur = connection.cursor()
-    sql = "SELECT centroid_ring_buffers({}, {}, {}, \'{}\', {})".format(minimum, maximum, step, wkt_point, srid_geom)
+    sql = "SELECT centroid_ring_buffers({}, {}, {}, {}, \'{}\', {})".format(minimum, maximum, step, size_ring, wkt_point, srid_geom)
     cur.execute(sql)
     return cur.fetchone()
 
@@ -61,9 +61,15 @@ def rings_on_grid(tile: str, connection: psycopg2.connect, crs_bdc):
 def prodes_by_ring(gid: str, connection: psycopg2.connect):
     sql = "SELECT * FROM prodes_by_ring_grid(\'{}\')".format(gid)
     return gpd.read_postgis(sql=sql, crs=crs_bdc, con=connection)
-    
+
+def prodes_by_roi(wkt_geom: str, srid: int, connection: psycopg2.connect):
+    sql = "SELECT * FROM prodes_by_roi(ST_Transform(ST_GeomFromText(\'{}\', {}), 4674), 4674)".format(wkt_geom, srid)
+    return gpd.read_postgis(sql=sql, crs=4674, con=connection)
 
 
+def rings_on_roi(wkt_geom:str, srid: int, connection: psycopg2.connect):
+    sql = "SELECT * FROM rings_on_roi(ST_GeomFromText(\'{}\', {}))".format(wkt_geom, srid)
+    return gpd.read_postgis(sql=sql, crs=crs_bdc, con=connection)
 
 def getFeatures(gdf):
     """Function to parse features from GeoDataFrame in such a manner that rasterio wants them"""

@@ -21,7 +21,7 @@ CREATE TABLE analysis.ring_buffer(
 CREATE INDEX idx_geom_ring_buffer ON analysis.ring_buffer USING GIST(geom); 
 
 -- Remove older version of the centroid_ring_buffers function
-DROP FUNCTION IF EXISTS centroid_ring_buffers(minimum integer, maximum integer, step integer, wkt_geom text, srid_geom integer);
+DROP FUNCTION IF EXISTS centroid_ring_buffers(minimum integer, maximum integer, step integer, size_ring integer,wkt_geom text, srid_geom integer);
 
 -- Create the "plpgsql" function that returns concentric ring buffers considering the centroid of a geometry passed as argument. 
 -- The function received a wkt geometry and it use the geometry centroid point to create concentric ring buffers.
@@ -29,31 +29,31 @@ CREATE FUNCTION centroid_ring_buffers(
     minimum integer,
     maximum integer,
     step integer,
+    size_ring integer,
     wkt_geom text,
     srid_geom integer    
 ) RETURNS integer AS $$
 DECLARE
   quantity integer := 0;
 BEGIN
- RAISE NOTICE 'Generating concentric ring buffers from % km to % km in % km steps at the %.', minimum, maximum, step, wkt_geom;
-  INSERT INTO analysis.ring_buffer (latitude_center, longitude_center, outer_radius, inner_radius, geom) 
+ RAISE NOTICE 'Generating concentric ring buffers from % km to % km, size ring % km, % km steps at the point %.', minimum, maximum, step, size_ring, wkt_geom;
+ INSERT INTO analysis.ring_buffer (latitude_center, longitude_center, outer_radius, inner_radius, geom) 
     (
      SELECT ST_Y(ST_CENTROID(ST_GeomFromText(wkt_geom,srid_geom))), ST_X(ST_CENTROID(ST_GeomFromText(wkt_geom,srid_geom))), minimum, 0, ST_Transform  
      (    
          ST_Buffer(ST_Transform(ST_CENTROID(ST_GeomFromText(wkt_geom,srid_geom)), 100002), (minimum * 1000), 'quad_segs=90'), 100002
      )::geometry(Polygon, 100002)  
    );
-  
-  
-  FOR d IN (minimum + 2*step)..maximum BY step * 2 LOOP
+    
+  FOR d IN (minimum + step + size_ring)..maximum BY (step + size_ring) LOOP
     INSERT INTO analysis.ring_buffer (latitude_center, longitude_center, outer_radius, inner_radius, geom) 
     (
-     SELECT ST_Y(ST_CENTROID(ST_GeomFromText(wkt_geom,srid_geom))), ST_X(ST_CENTROID(ST_GeomFromText(wkt_geom,srid_geom))), d, d-step, ST_Transform  
+     SELECT ST_Y(ST_CENTROID(ST_GeomFromText(wkt_geom,srid_geom))), ST_X(ST_CENTROID(ST_GeomFromText(wkt_geom,srid_geom))), d, d-size_ring, ST_Transform  
      (
        ST_Difference
        (
          ST_Buffer(ST_Transform(ST_CENTROID(ST_GeomFromText(wkt_geom,srid_geom)), 100002), (d * 1000), 'quad_segs=90'), 
-         ST_Buffer(ST_Transform(ST_CENTROID(ST_GeomFromText(wkt_geom,srid_geom)), 100002), ((d * 1000) - (step * 1000)), 'quad_segs=90')
+         ST_Buffer(ST_Transform(ST_CENTROID(ST_GeomFromText(wkt_geom,srid_geom)), 100002), ((d * 1000) - (size_ring * 1000)), 'quad_segs=90')
        ), 100002
      )::geometry(Polygon, 100002)  
    );
@@ -69,7 +69,7 @@ $$ LANGUAGE plpgsql;
 
 
 -- Example of use the function centroid_ring_buffers(minimum, maximum, step, srid_geom, srid_rings, wkt_geom)
-SELECT centroid_ring_buffers(10, 450, 5, (SELECT ST_AsText(ST_CENTROID(geom))::text FROM ibge.uf_2020 WHERE sigla_uf='RO'), 4674)
+SELECT centroid_ring_buffers(20, 450, 15, 10, (SELECT ST_AsText(ST_CENTROID(geom))::text FROM ibge.uf_2020 WHERE sigla_uf='RO'), 4674)
 
 DROP FUNCTION IF EXISTS rings_on_grid(grid_tile varchar(254));
 
@@ -91,6 +91,23 @@ $$ LANGUAGE plpgsql;
 
 -- Example how to use the function "ring_of_grid"
 SELECT * FROM rings_on_grid('013017');
+
+
+DROP FUNCTION IF EXISTS rings_on_roi(roi geometry);
+
+CREATE OR REPLACE FUNCTION rings_on_roi(roi geometry)
+  RETURNS TABLE (gid_ring integer,
+                 outer_radius integer,
+                 inner_radius integer,
+                 geom geometry(MULTIPOLYGON, 100002)) AS $$
+BEGIN
+   RETURN QUERY
+   SELECT ring.gid AS gid_ring, ring.outer_radius AS outer_radius, ring.inner_radius AS inner_radius,
+       ST_Intersection(ST_Transform(roi,100002), ring.geom) AS geom
+   FROM  analysis.ring_buffer AS ring
+   WHERE ST_Intersects(ST_Transform(roi,100002), ring.geom);
+END
+$$ LANGUAGE plpgsql;
 
 
 
@@ -218,8 +235,8 @@ SELECT * FROM prodes_by_ring_grid('013017');
 
     
     
-DROP FUNCTION IF EXISTS prodes_by_ring_grid(grid_tile varchar(254), table_label varchar(254), year_target integer);
-CREATE OR REPLACE FUNCTION prodes_by_ring_grid(grid_tile varchar(254), table_label varchar(254), year_target integer)
+DROP FUNCTION IF EXISTS prodes_in_ring(roi geometry, table_label varchar(254), year_target integer);
+CREATE OR REPLACE FUNCTION prodes_in_ring(roi geometry, table_label varchar(254), year_target integer)
   RETURNS TABLE (gid integer,
                  id integer,
                  origin_id integer,
