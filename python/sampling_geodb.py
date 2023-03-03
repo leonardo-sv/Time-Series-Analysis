@@ -15,11 +15,74 @@ from rasterio import features
 from shapely import wkt
 from matplotlib import pyplot
 from rasterio.mask import mask
+from pyproj import Transformer
 
 
 # Handle the Vectorial data
 crs_bdc = pyproj.CRS("+proj=aea +lat_0=-12 +lon_0=-54 +lat_1=-2 +lat_2=-22 +x_0=5000000 +y_0=10000000 +ellps=GRS80 +units=m +no_defs")
 
+def rule_5x5(xs: List[int], ys: List[int], image_data: np.array):
+    rows, cols = image_data.shape
+    mask = []
+    for x, y in zip(xs, ys):
+        if (x not in [0, 1, rows - 1, rows - 2]) & (y not in [0, 1, cols - 1, cols - 2]):
+            flag =  np.all(image_data[x-2:x+3, y-2:y+3] == image_data[x, y])
+        else:
+            flag = False
+        mask.append(flag)
+    return mask
+
+def sampling(raster_path: str, label: int, start_date: str, end_date:str, method="all", rule_test=False, n_samples=0):
+    map_raster = rasterio.open(raster_path)
+    map_array = map_raster.read(1)
+    xy_samples = np.where(map_array == label)
+    idx = None
+    if method == "random":
+        np.random.seed(42)
+        idx = np.random.choice(xy_samples[0].size, n_samples, replace=False)
+    elif method == "all":
+        idx = np.arange(0, len(xy_samples[0]), 1)
+
+    if rule_test:
+        mask = rule_5x5(xy_samples[0][idx], xy_samples[1][idx], map_array)
+        idx = idx[mask]
+
+    rows = xy_samples[0][idx]
+    cols = xy_samples[1][idx]
+
+    xs, ys = rasterio.transform.xy(map_raster.transform, rows, cols, offset='center')#4326
+    points = []
+    lat = []
+    long = []
+    
+    transformer = Transformer.from_crs(crs_bdc, 4676)
+    for c1, c2 in zip(xs, ys):
+        points.append((c1, c2))
+    
+    for pt in transformer.itransform(points): 
+        lat.append(pt[0])
+        long.append(pt[1])
+        
+    _df = pd.DataFrame()
+    _df['longitude'] = [long[0] for long in points]
+    _df['latitude'] = [lat[1] for lat in points]
+    _df['start_date'] = start_date
+    _df['end_date'] = end_date
+    _df['label'] = label
+
+    return _df
+
+
+def get_bbox(tile):
+    dic_tile = {'077095': '-65.2, -10.0, -63.86, -10.86',
+                '078095': '-63.55, -10.06, -62.3, -10.83',
+                '079095': '-62.05, -10.01, -60.76, -10.92',
+                '077094': '-65.0, -9.0, -63.8, -9.8',
+                '078094': '-63.5, -9.1, -62.35, -9.87',
+                '077093': '-65.06, -8.04, -63.8, -8.84',
+                '078093': '-63.5, -8.12, -62.29, -8.87',
+                '079093': '-61.96, -8.2, -60.68, -9.0'}
+    return dic_tile[tile]
 
 
 #Return a connection of geodb database
@@ -48,22 +111,29 @@ def get_concentric_rings(connection: psycopg2.connect):
     return gpd.read_postgis(sql=sql, crs = 4674, con=connection)
 
 def grids_by_roi(wkt_geom:str, crs_geom: int, connection: psycopg2.connect):
-    sql_params = [wkt_geom, crs_geom]
+    sql_params = [crs_geom, wkt_geom, crs_geom]
     
-    sql = "SELECT * FROM grids_by_roi(ST_GeomFromText(\'{}\',{}))".format(*sql_params)
-    return gpd.read_postgis(sql=sql, crs=crs_bdc, con=connection)
+    sql = "SELECT gid, id, tile, ST_TRANSFORM(geom, {}) AS geom FROM grids_by_roi(ST_GeomFromText(\'{}\',{}))".format(*sql_params)
+    if(crs_geom == 100002):
+        crs_geom = crs_bdc
+    return gpd.read_postgis(sql=sql, crs=crs_geom, con=connection)
     
 
-def rings_on_grid(tile: str, connection: psycopg2.connect, crs_bdc):
+def rings_on_grid(tile: str, connection: psycopg2.connect):
     sql = "SELECT * FROM rings_on_grid(\'{}\')".format(tile)
     return gpd.read_postgis(sql=sql, crs=crs_bdc, con=connection)
 
-def prodes_by_ring(gid: str, connection: psycopg2.connect):
-    sql = "SELECT * FROM prodes_by_ring_grid(\'{}\')".format(gid)
+def prodes_on_ring(tile: str, table: str, year: int, connection: psycopg2.connect):
+    sql = "SELECT * FROM prodes_by_ring_grid(\'{}\', \'{}\', {})".format(tile, table, year)
+    
     return gpd.read_postgis(sql=sql, crs=crs_bdc, con=connection)
 
-def prodes_by_roi(wkt_geom: str, srid: int, connection: psycopg2.connect):
-    sql = "SELECT * FROM prodes_by_roi(ST_Transform(ST_GeomFromText(\'{}\', {}), 4674), 4674)".format(wkt_geom, srid)
+def prodes_by_roi(wkt_geom: str, srid: int, year: int, connection: psycopg2.connect):
+    sql = "SELECT * FROM prodes_by_roi(ST_Transform(ST_GeomFromText(\'{}\', {}), 4674), 4674, {})".format(wkt_geom, srid, year)
+    return gpd.read_postgis(sql=sql, crs=crs_bdc, con=connection)
+
+def prodes_on_grid(tile: str, year: int, connection: psycopg2.connect):
+    sql = "SELECT * FROM prodes_on_grid(\'{}\', {})".format(tile, year)
     return gpd.read_postgis(sql=sql, crs=4674, con=connection)
 
 
