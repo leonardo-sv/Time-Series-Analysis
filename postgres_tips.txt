@@ -1,5 +1,0 @@
-List databases -> \l
-List databases with more info -> \l+
-List Tables -> \dt
-List Schemas -> \dn
-List all tables in schemas -> \dt *.*
