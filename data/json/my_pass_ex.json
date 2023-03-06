@@ -1,0 +1,7 @@
+{"STAC_TOKEN": "TOKEN",
+  "USER": "user_name",
+  "PASS": "password",
+  "DB": "database" ,
+  "HOST": "host",
+  "PORT": "0000"
+}

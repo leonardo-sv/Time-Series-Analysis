@@ -52,23 +52,24 @@ def sampling(raster_path: str, label: int, start_date: str, end_date:str, method
 
     xs, ys = rasterio.transform.xy(map_raster.transform, rows, cols, offset='center')#4326
     points = []
-    lat = []
-    long = []
+    latitude = []
+    longitude = []
     
     transformer = Transformer.from_crs(crs_bdc, 4676)
+    
     for c1, c2 in zip(xs, ys):
         points.append((c1, c2))
     
     for pt in transformer.itransform(points): 
-        lat.append(pt[0])
-        long.append(pt[1])
-        
+        latitude.append(pt[0])
+        longitude.append(pt[1])
+    
     _df = pd.DataFrame()
-    _df['longitude'] = [long[0] for long in points]
-    _df['latitude'] = [lat[1] for lat in points]
+    _df['longitude'] = [long for long in longitude]
+    _df['latitude'] = [lat for lat in latitude]
     _df['start_date'] = start_date
     _df['end_date'] = end_date
-    _df['label'] = label
+    _df['label'] = "Desmatamento" if label == 175 else "Floresta"
 
     return _df
 
