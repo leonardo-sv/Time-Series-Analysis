@@ -29,3 +29,4 @@ MANIFEST
 
 # pyenv
 .python-version
+.Rproj.user
