@@ -1,0 +1,22 @@
+---
+title: "sits_studies"
+author: "Leonardo Vieira"
+date: "5/6/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+Time series is a set of measures over regular intervals of time organized over two axes, one is the value measured, and the second is the time measurement (the time when we made the measure). Considering Earth observation data, a time series consists of a set band values obtained over a collection of satellite images in the same data point (single coordinates) with periodic time steps between the satellite images.
+
+Data cubes facilitates the use of Earth observation time series in Machine Learning approaches because this kind of structure organized the ARD (Analysis-ready data) collections of satellite data in regular cubes.
+
+SITS (Satellite Image Time Series) is an open-source R package focused on time series satellite images for land use and land cover analysis and classification. The package allows handling big Earth Observation data images organized in a data cubes. 
+
+
+
+

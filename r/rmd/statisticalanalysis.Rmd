@@ -1,0 +1,65 @@
+---
+title: "Statistical analysis in deforestation and forest samples in Amazon Forest"
+output: html_notebook
+---
+
+# Introduction
+
+The Amazon forest is the largest rain forest in the world and it has a important role in carbon cycle, and climate regulation. Majority of the Amazon forest is in Brazil about 60%. Since the final of 80 decade the Brazilian government maintain projects based in remote sensing images to monitoring the region. PRODES launched in 1988 is a project global respect and it was responsible for a considerable decrease in deforestation rate in the 90's and begging of 2000's. However the deforestation    has increased over the past 15 years and this is a concern to Brazilian government.
+
+Even with the evolution of machine learning methods the visual analysis of the images still is used in PRODES and others monitoring projects. There are some reasons, the region is covered by clouds almost all year and it can result in noise sample, and low number images with soil information. Another reason is the variability of of the samples observed in the region. The amazon forest has a distinct response over year and more, the forest may be different depending on the location, and this can result in multiple patterns. Also, the deforestation not occur regular and it presented distinct patterns to samples. So produced a machine learning method to produced information not can be simple. 
+
+Considering the sampling process in machine learning methods, understand how samples behaves spatial and temporal is fundamental to improve the results of machine learning methods. So, this work has a objective to produces a statistical analysis over samples of deforestation and forest in Amazon forest to understand how much the patterns is different in the deforest and forest classes.
+
+
+# Statistical Analysis
+
+Statistical analysis is a mathematical procedure to investigate trends, patterns and relationship through quantitative data. The method consists in collect data and summarize it using a descriptive statistics. To draw a valid conclusions using statistical analysis is important develop carefully the sampling procedure, use inferential statistics to test hypotheses, make estimates about the population to finally interpret and generalize your findings.
+
+## Hypotheses
+* General
+  + Can use short time series to improve the generalization of model?
+  + Is there a relationship between samples in different region and time?
+  
+* Spatial 
+  + Samples in different tile can be classify using an single tile as reference. 
+  + The patterns are similar in different tiles.
+  + Is possible produce a ML model generic as possible to classify different region?
+* Temporal
+  + Samples in a specific time step can be used to classify samples in the future
+  + The seasonal behavior of time series happen in the next years
+
+  
+  
+# Statistics
+
+The samples was obtained using PRODES map to define its geographic location (longitude and latitude) and S2_SEN2COR_10_16D_STK-1 BDC cube its used to extract the time series values. PRODES methodology allow us define forest samples where it is possible safety defined a single class sample along two consecutive years. Considering deforestation areas is not possible ensure a single class sample along these two years, because the land cover can change along the selected period, e.g pasture. But it is possible to conclude that there was a deforestation at least the beginning of the time series period, and the ground truth is not be a primary forest in all period. All total was selected 77636 time series samples: 55352 of forest, and 22284 deforested area.
+Above it is showed how import the samples and how visualize them.
+
+```{r}
+samples <- readRDS("../../data/rds/samples.rds")
+head(samples)
+```
+In time series analysis its is useful visualize the temporal patterns to understand the band variability over the period. The chart above present a statistical approximation of the samples in a single plot with all available sentinel bands and two vegetation indexes. The patterns presented is created using an additive model (GAM) to obtain a possible predictor.
+
+The following code present the function sits_patterns() is based on dtwSat R package to produce the information used in function plot() thats produce the chart.
+
+
+```{r}
+patterns <- sits_patterns(samples)
+patterns %>% plot()
+  
+```
+
+The resulting patterns allow analyse the behavior of the deforestation and Forest classes over two years of observations. The Forest class has less variation response than deforestation over the years, this show that it should be possible to generate a reasonable separation between the classes. Considering the vegetation indexes we can make some insights over the classes already expected. The forest response is more homogeneous over the period with a high values if compared with the deforestation class, where the responses present more variation. The deforestation highest response occurring in the rainy season with a considerable drop in the dry season. Contrasting the indexes, the deforestation response to NDVI and EVI present a strong linear positive correlation. Now for the forest response there are no strong linear correlation between the indexes. There are periods where the response present a linear negative correlation, e.g May to September 2018. But also there periods where this relation is not clearly, e.g January to April 2018. This difference relation also allow segment the samples more clearly given the pattern difference. Although considering a time split yearly in the plot we can observe a seasonal pattern for both classes with an positive linear correlation in consecutive years. This show that the patterns for both classes remains over this consecutive years indicating that is possible classify the samples yearly. Analyzing only the sentinel bands in forest response we can see an linear positive correlation for all bands, but in deforestation class it observed an negative linear correlation for B11 and B12 bands. This  indicate that the machine learning model can benefits using these bands signatures to distinguish the classes.
+
+
+```{r}
+library(dplyr)
+nrow(samples[samples$label == 'Forest', ])
+nrow(samples[samples$label == 'Deforested', ])
+
+```
+
+
+

@@ -1,0 +1,67 @@
+---
+title: "Time Series Variability Analysis"
+author: "Leonardo de Souza Vieira"
+output: html_notebook
+---
+
+-------------------------------------------------
+### Introduction
+
+Amazon forest is the largest tropical forest in the world with about 5.015.067,749 km$^2$. The Amazon ecosystem comports extended biodiversity, and it has an important role in the carbon cycle. Therefore, preserving it is crucial to maintain the climatic balance and avoid unwanted changes that can be a risk to the earth's life.
+
+In contrast, the Amazon also is a font of natural resources resulting in economic interest by nations. This can incite illegal actions of degradation, deforestation or mining. This can incite illegal actions of degradation, deforestation, or mining. This conflict of interests demands that governmental institutions promote laws and actions for the development of sustainable models in the exploitation of resources, aiming to reach a balance between ecological and economic interests.
+Due to the extend of Amazon, to avoid illegal deforestation, Brazil invested in satellite monitoring like PRODES program.
+
+
+
+
+This document presents a study about the variability of the land cover reference data in the Brazilian Amazon.  The study consists in evaluate the variability of the time series patterns to understand how we can improve the accuracy of machine learning classification maps. The analysis use an unsupervised, and supervised learning technique for evaluate how models produced with samples in a region behaves to classify samples in other regions. Also, we analyse how this models behaves over time to classify samples in a future. In other words we want analyse the behavior of machine learning models varying spatially and temporally the a set of samples in classification.
+
+
+
+### Theoretical Foundation
+
+Time series is a set of measures over regular intervals of time organized over two axes, one is the value measured, and the second is the time measurement (the time when we made the measure). Considering Earth observation data, a time series consists of a set band values obtained over a collection of satellite images in the same data point (single coordinates) with periodic time steps between the satellite images.
+
+Data cubes facilitates the use of Earth observation time series in Machine Learning approaches because this kind of structure organized the ARD (Analysis-ready data) collections of satellite data in regular cubes.
+
+SITS (Satellite Image Time Series) is an open-source R package focused on time series satellite images for land use and land cover analysis and classification. The package allows handling big Earth Observation data images organized in a data cubes. 
+
+
+### Region of Interest
+
+
+
+```{r}
+sent_cube <- sits_cube(
+  source        = "BDC",
+  collection    = "S2-SEN2COR_10_16D_STK-1",
+  bands         = c("B01", "B02","B03","B04","B05","B06",
+                    "B07","B08","B09","B11", "B12", "NDVI", "EVI", "CLOUD"),
+  tiles         = c("077093","077094","077095","078093","078094",
+                    "078095","079093","079094","079095"), 
+  start_date    = "2017-08-06", 
+  end_date      = "2019-07-31" 
+)
+
+```
+
+
+```{r}
+sent_cube <- sits_cube(
+  source        = "BDC",
+  collection    = "S2-SEN2COR_10_16D_STK-1",
+  bands         = c("B01", "B02","B03","B04","B05","B06",
+                    "B07","B08","B09","B11", "B12", "NDVI", "EVI", "CLOUD"),
+  tiles         = c("077093","077094","077095","078093","078094",
+                    "078095","079093","079094","079095"), 
+  start_date    = "2017-08-06", 
+  end_date      = "2019-07-31" 
+)
+
+plot(sent_cube,
+     red = "B05", blue = "B02", green = "B04",
+     date = "2018-08-29"
+)
+
+```
