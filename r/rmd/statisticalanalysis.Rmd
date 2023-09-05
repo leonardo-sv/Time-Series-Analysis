@@ -5,11 +5,11 @@ output: html_notebook
 
 # Introduction
 
-The Amazon forest is the largest rain forest in the world and it has a important role in carbon cycle, and climate regulation. Majority of the Amazon forest is in Brazil about 60%. Since the final of 80 decade the Brazilian government maintain projects based in remote sensing images to monitoring the region. PRODES launched in 1988 is a project global respect and it was responsible for a considerable decrease in deforestation rate in the 90's and begging of 2000's. However the deforestation    has increased over the past 15 years and this is a concern to Brazilian government.
+The Amazon forest is the largest rainforest in the world, and it has a vital role in the carbon cycle and climate regulation. The majority of the Amazon forest is in Brazil, about 60%. Since the end of 80 decade, the Brazilian government has maintained projects based on remote sensing images to monitor the region. PRODES, launched in 1988, is a project with global respect, and it was responsible for a considerable decrease in the deforestation rate in the 90s and the beginning of the 2000s. However, deforestation has increased over the past 15 years, which concerns the Brazilian government.
 
-Even with the evolution of machine learning methods the visual analysis of the images still is used in PRODES and others monitoring projects. There are some reasons, the region is covered by clouds almost all year and it can result in noise sample, and low number images with soil information. Another reason is the variability of of the samples observed in the region. The amazon forest has a distinct response over year and more, the forest may be different depending on the location, and this can result in multiple patterns. Also, the deforestation not occur regular and it presented distinct patterns to samples. So produced a machine learning method to produced information not can be simple. 
+Even with the evolution of machine learning methods, the visual analysis of the images is the primary method in PRODES and other monitoring projects. For some reason, the region is covered by clouds almost all year, which can result in noise samples and a low number of images with soil information. Another reason is the variability of the samples observed in the region. The Amazon forest has a distinct response over a year and more; the forest may be different depending on the location, and this can result in multiple patterns. Also, deforestation only occurs occasionally, presenting distinct patterns to samples. So, a machine learning method to produce information can be complex. 
 
-Considering the sampling process in machine learning methods, understand how samples behaves spatial and temporal is fundamental to improve the results of machine learning methods. So, this work has a objective to produces a statistical analysis over samples of deforestation and forest in Amazon forest to understand how much the patterns is different in the deforest and forest classes.
+Considering the sampling process in machine learning methods, understanding how samples behave spatial and temporal is fundamental to improving the results of machine learning methods. So, this work aims to produce a statistical analysis of samples of deforestation and forest in the Amazon forest to understand how much the patterns are different in the deforest and forest classes.
 
 
 # Statistical Analysis
@@ -33,33 +33,93 @@ Statistical analysis is a mathematical procedure to investigate trends, patterns
   
 # Statistics
 
-The samples was obtained using PRODES map to define its geographic location (longitude and latitude) and S2_SEN2COR_10_16D_STK-1 BDC cube its used to extract the time series values. PRODES methodology allow us define forest samples where it is possible safety defined a single class sample along two consecutive years. Considering deforestation areas is not possible ensure a single class sample along these two years, because the land cover can change along the selected period, e.g pasture. But it is possible to conclude that there was a deforestation at least the beginning of the time series period, and the ground truth is not be a primary forest in all period. All total was selected 77636 time series samples: 55352 of forest, and 22284 deforested area.
-Above it is showed how import the samples and how visualize them.
+The samples using a PRODES map to define their geographic location (longitude and latitude) and S2_SEN2COR_10_16D_STK-1 BDC cube provide the time series values. PRODES methodology allows us to define forest samples where it is possible to define a single class sample over two consecutive years safely. Considering deforestation areas, it is impossible to ensure a single class sample over these two years because the land cover can change along the selected period, e.g., pasture. However, it is possible to conclude that there was deforestation at the beginning of the time series period, and the ground truth is not a primary forest in all periods. The samples have 77636 time series: 64561  in forest and 28668 deforested areas. The R code above imports the samples and the first six samples.
 
 ```{r}
 samples <- readRDS("../../data/rds/samples.rds")
 head(samples)
 ```
-In time series analysis its is useful visualize the temporal patterns to understand the band variability over the period. The chart above present a statistical approximation of the samples in a single plot with all available sentinel bands and two vegetation indexes. The patterns presented is created using an additive model (GAM) to obtain a possible predictor.
 
-The following code present the function sits_patterns() is based on dtwSat R package to produce the information used in function plot() thats produce the chart.
+# General Analysis
+
+The statistic analysis can allow us to understand the temporal and spatial behavior of the samples, showing patterns, trends, relationships, and variability using quantitative data. We will start presenting a summary of the bands' values by class. The data comprises sentinel observations, including twelve bands and two vegetation indexes. The code above summarizes the time series data along the time by class. In this summary, we can visualize basic statistical measurements for each band by class.
+
+* Forest samples
+
+```{r}
+forest_samples <- samples[samples$label == "Forest",]
+ts <- forest_samples$time_series
+dt <- dt <- data.table::data.table(dplyr::bind_rows(ts))
+summary(dt)
+```
+
+* Deforestation samples 
+ 
+```{r}
+deforestation_samples <- samples[samples$label == "Deforestation",]
+ts <- deforestation_samples$time_series
+dt <- dt <- data.table::data.table(dplyr::bind_rows(ts))
+summary(dt)
+```
+ 
+To all values, we can observe a distortion between the median/mean and the maximum and maximum value measured for both the deforestation and the forest class. In this summary, the measures consider all values independent of the date, so we do not consider the temporal characteristic of the samples. These distortions can indicate that the observed value can not correspond to the actual land cover value at some point in the period. Some reasons for this can be the presence of clouds,  aerosol interference, or pixel saturation. The interquartile range shows slight variation, indicating that most observed values have a singular pattern. 
+
+# Variation band
+
+Above is presented a box plot for each band.  
+ 
+```{r}
+plot_box(samples)
+```
+
+The interquartile variation is generally more significant for the Deforestation class than the Forest class, showing that the forest class presented a more homogeneous behavior. This behavior is 
+expected considering the characteristics of the classes. The Amazon forest presents a massive tree concentration throughout the entire period. Meanwhile, deforestation is a non-homogeneous tree loss that can explain the variation, and the area can be another class, e.g., pasture. Still looking for the interquartile, the band variation is slight to all bands and slightly more significant to indexes. The bands B01 to B05 presented a slight variation considering the two classes. Contrasting Forest against Deforestation class, the band B12 to Forest class also presents a slight variation; meanwhile, the band B12 to Deforestation class presents more variation in comparison. The bands B06 to B11 present more variation in contrast to other bands. The indexes' variation is more considerable, mainly considering the deforestation class. The median for the bands presents less variation to the classes compared to indexes; this shows how these indexes highlight the vegetation. All bands presented many numbers of outliers. To analyze these behaviors, we will explore the temporal characteristics to verify if these observations can be retired or if these outliers represent a natural variation considering clouds, for example.
+
+
+Now, we are analyzing the behavior of the bands, considering the time variation. To simplify the visualization of the charts, we analyzed the two indexes (NDVI and EVI). Above, we plot two charts of the median and the quartiles. The command above calculated some statistics from the sample data: Mean, Median, Quartil 25%, Quartil 75%, Median, Standard deviation, and Correlation.
+
+```{r}
+stats <- stats_ts(samples)
+```
+
+* NDVI and EVI (Plotting Median and Quartils)
+
+```{r}
+plot_stats(stats, c("Median", "Q25", "Q75"), c("NDVI", "EVI"))
+```
+
+Analyzing the graphs, we can observe that the forest samples present a behavior with less variation in the median value over time than the deforestation class. The interquartile range for deforestation samples is generally considerably more extensive than for forest samples. In addition, the interquartile distance is more diminutive in periods of drought, indicating that the lower presence of clouds in this period drastically reduces the variability of observed values. The median of the indices for the deforestation samples presents two characteristic peaks in the rainy season and two valleys in the dry season. As for the forest samples, it is also possible to identify these peaks and valleys for the same periods. However, the values have a lower variance, highlighting the more homogeneous behavior for the vegetation indices over time. By contrasting the indices, we can see that
+in the case of deforestation samples, the general behavior of the median is similar for both indices, with lower values for EVI and higher values for NDVI. As for the forest samples, we can identify an almost opposite behavior for the indices. When the value increases for the EVI, the median value decreases for the NDVI. 
+
+# Patern analysis
+
+In time series analysis, it is helpful to visualize the temporal patterns to understand the band variability over the period. The chart above presents a statistical approximation of the samples in a single plot with all available sentinel bands and two vegetation indexes. The patterns represent an additive model (GAM) to obtain a possible predictor.
+
+The following code presents the function sits_patterns(). It uses the dtwSat R package to generate the patterns used in the plot.
 
 
 ```{r}
 patterns <- sits_patterns(samples)
-patterns %>% plot()
+plot_patterns(patterns)
   
 ```
 
-The resulting patterns allow analyse the behavior of the deforestation and Forest classes over two years of observations. The Forest class has less variation response than deforestation over the years, this show that it should be possible to generate a reasonable separation between the classes. Considering the vegetation indexes we can make some insights over the classes already expected. The forest response is more homogeneous over the period with a high values if compared with the deforestation class, where the responses present more variation. The deforestation highest response occurring in the rainy season with a considerable drop in the dry season. Contrasting the indexes, the deforestation response to NDVI and EVI present a strong linear positive correlation. Now for the forest response there are no strong linear correlation between the indexes. There are periods where the response present a linear negative correlation, e.g May to September 2018. But also there periods where this relation is not clearly, e.g January to April 2018. This difference relation also allow segment the samples more clearly given the pattern difference. Although considering a time split yearly in the plot we can observe a seasonal pattern for both classes with an positive linear correlation in consecutive years. This show that the patterns for both classes remains over this consecutive years indicating that is possible classify the samples yearly. Analyzing only the sentinel bands in forest response we can see an linear positive correlation for all bands, but in deforestation class it observed an negative linear correlation for B11 and B12 bands. This  indicate that the machine learning model can benefits using these bands signatures to distinguish the classes.
-
+The resulting patterns allow us to analyze the behavior of the deforestation and Forest classes over two years of observations. The Forest class has less variation response than deforestation over the years; this shows that it should be possible to generate a reasonable separation between the classes. We can gain some insights into the expected classes by considering the vegetation indexes. The forest response is more homogeneous over the period with high values than the deforestation class, where the responses present high variation. Deforestation is the highest response occurring in the rainy season, with a considerable drop in the dry season. Contrasting the indexes, the deforestation response to NDVI and EVI presents a solid linear positive correlation. For the forest response, there is no strong linear correlation between the indexes.
 
 ```{r}
-library(dplyr)
-nrow(samples[samples$label == 'Forest', ])
-nrow(samples[samples$label == 'Deforested', ])
-
+cor <- corr_ts(patterns)
+plot_corr_matrix(cor)
+  
 ```
 
+```{r}
+df <- corr_classes(patterns)
+
+ggplot(data=df, aes(x=Band, y=Correlation)) +
+  geom_bar(stat="identity", fill="steelblue")+
+  geom_text(aes(label=Correlation), vjust=-0.3, size=3.5)+
+  theme_minimal()
+
+```
 
 

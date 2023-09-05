@@ -14,7 +14,28 @@ library(sf)
 # to search for possible outliers in data set. 
 filter_vband <- function(input_data, obs_date, min_value, max_value, label_target, tile_target){
   print(tile_target)
+  print(as.Date(obs_date))
   pre_filter <- filter(input_data, label == label_target, tile == tile_target)
+  
+  if(obs_date %in% input_data$time_series[[1]]$Index){
+    return(filtered <- filter(pre_filter, unlist(
+      lapply(pre_filter$time_series, 
+             function(x) 
+               (any(  x$Index == as.Date(obs_date) &
+                        x$NDVI > min_value & 
+                        x$NDVI < max_value))))))
+    }
+  
+  
+  
+  return(input_data)
+    
+  
+}
+
+filter_band <- function(input_data, obs_date, min_value, max_value, label_target){
+  print(tile_target)
+  pre_filter <- filter(input_data, label == label_target)
   return(
     filter(pre_filter, unlist(
       lapply(pre_filter$time_series, 
@@ -25,6 +46,14 @@ filter_vband <- function(input_data, obs_date, min_value, max_value, label_targe
   
 }
 
+
+find_outiers <- function(samples){
+  forest_samples <- samples[samples$label == "Forest",]
+  ts <- forest_samples$time_series
+  dt <- data.table::data.table(dplyr::bind_rows(ts))
+  f_summary <- summary(dt)
+  
+} 
 
 test<-head(input_data.tb, 5)
 test2 <- filter_by_value_date(test, "2017-08-13", 0.0, 0.68, "Floresta")
@@ -39,18 +68,18 @@ add_tile <- function(data.df, shapefile){
   points <- st_sfc(points, crs=4326)
   
   return(data.df %>% mutate(tile = case_when(
-    (st_within(points,nc[nc$tile == "077093",],sparse = FALSE)) ~ "077093",
-    (st_within(points,nc[nc$tile == "077094",],sparse = FALSE)) ~ "077094",
-    (st_within(points,nc[nc$tile == "077095",],sparse = FALSE)) ~ "077095",
-    (st_within(points,nc[nc$tile == "078093",],sparse = FALSE)) ~ "078093",
-    (st_within(points,nc[nc$tile == "078094",],sparse = FALSE)) ~ "078094",
-    (st_within(points,nc[nc$tile == "078095",],sparse = FALSE)) ~ "078095",
-    (st_within(points,nc[nc$tile == "079093",],sparse = FALSE)) ~ "079093",
-    (st_within(points,nc[nc$tile == "079094",],sparse = FALSE)) ~ "079094",
-    (st_within(points,nc[nc$tile == "079095",],sparse = FALSE)) ~ "079095"
+    (st_within(points,nc[nc$tile == "012014",],sparse = FALSE)) ~ "012014",
+    (st_within(points,nc[nc$tile == "012015",],sparse = FALSE)) ~ "012015",
+    (st_within(points,nc[nc$tile == "012016",],sparse = FALSE)) ~ "012016",
+    (st_within(points,nc[nc$tile == "013014",],sparse = FALSE)) ~ "013014",
+    (st_within(points,nc[nc$tile == "013015",],sparse = FALSE)) ~ "013015",
+    (st_within(points,nc[nc$tile == "013016",],sparse = FALSE)) ~ "013016",
+    (st_within(points,nc[nc$tile == "014014",],sparse = FALSE)) ~ "014014",
+    (st_within(points,nc[nc$tile == "014015",],sparse = FALSE)) ~ "014015",
+    (st_within(points,nc[nc$tile == "014016",],sparse = FALSE)) ~ "014016"
     
   )))
-  
+
 }
 add_tile_1 <- function(data.df) {
   return(
@@ -106,18 +135,289 @@ create_iqr <- function(dt, band) {
   
   data.table::setnames(dt, band, "V1")
   dt_med <- dt[, stats::median(V1), by = Index]
-  data.table::setnames(dt_med, "V1", "med")
+  data.table::setnames(dt_med, "V1", "Median")
   dt_qt25 <- dt[, stats::quantile(V1, 0.25), by = Index]
-  data.table::setnames(dt_qt25, "V1", "qt25")
+  data.table::setnames(dt_qt25, "V1", "quantile-25")
   dt_qt75 <- dt[, stats::quantile(V1, 0.75), by = Index]
-  data.table::setnames(dt_qt75, "V1", "qt75")
+  data.table::setnames(dt_qt75, "V1", "quantile-75")
+  dt_mean <- dt[, mean(V1), by = Index]
+  data.table::setnames(dt_sd, "V1", "Mean")
   dt_var <- dt[, stats::var(V1), by = Index]
-  data.table::setnames(dt_var, "V1", "var")
+  data.table::setnames(dt_var, "V1", "Variance")
+  dt_sd <- dt[, stats::sd(V1), by = Index]
+  data.table::setnames(dt_sd, "V1", "Std Deviation")
+  
+  
   dt_qts <- merge(dt_med, dt_qt25)
   dt_qts <- merge(dt_qts, dt_qt75)
+  dt_qts <- merge(dt_qts, dt_mean)
   dt_qts <- merge(dt_qts, dt_var)
+  dt_qts <- merge(dt_qts, dt_sd)
   data.table::setnames(dt, "V1", band)
   return(dt_qts)
+}
+
+stats_ts <- function(ts_tibble) {
+  V1 <- NULL
+  dt_stats <- data.table(
+    "Index" = structure(numeric(0), class = "Date"),
+    "Value" = numeric(),
+    "Stats" = character(),
+    "StatsBand" = character(),
+    "label" = character(),
+    "band" = character()
+    
+  )
+  labels <- sits_labels(ts_tibble)
+  bands <- sits_bands(ts_tibble)
+  
+  for (label in labels){
+    dt_bylabel <- ts_tibble[ts_tibble$label == label,]
+    ts <- dt_bylabel$time_series
+    dt <- data.table::data.table(dplyr::bind_rows(ts))
+    
+    for(band in bands){
+      dt_qts <- data.table(
+        Index = structure(numeric(0), class = "Date"),
+        "Value" = numeric(),
+        "Stats" = character(), 
+        "StatsBand" = character()
+      )
+      data.table::setnames(dt, band, "V1")
+      dt_med <- dt[, stats::median(V1), by = Index]
+      data.table::setnames(dt_med, "V1", "Value")
+      dt_med[ , `:=` (StatsBand = paste(band, "Median)", sep="("),
+                      Stats ="Median")]
+      
+      dt_qt25 <- dt[, stats::quantile(V1, 0.25), by = Index]
+      data.table::setnames(dt_qt25, "V1", "Value")   
+      dt_qt25[ , `:=` (StatsBand = paste(band, "Q25)", sep="("),
+               Stats ="Q25")]
+      
+      dt_qt75 <- dt[, stats::quantile(V1, 0.75), by = Index]
+      data.table::setnames(dt_qt75, "V1","Value")
+      dt_qt75[ , `:=` (StatsBand = paste(band, "Q75)", sep="("),
+               Stats ="Q75")]
+      
+      dt_var <- dt[, stats::var(V1), by = Index]
+      data.table::setnames(dt_var, "V1", "Value")
+      dt_var[ , `:=` (StatsBand = paste(band, "Variance)", sep="("),
+              Stats ="Variance")]
+      
+      dt_mean <- dt[, mean(V1), by = Index]
+      data.table::setnames(dt_mean, "V1", "Value")
+      dt_mean[ , `:=` (StatsBand = paste(band, "Mean)", sep="("),
+                      Stats ="Mean")]
+      
+      dt_sd <- dt[, stats::sd(V1), by = Index]
+      data.table::setnames(dt_sd, "V1", "Value")
+      dt_sd[ , `:=` (StatsBand = paste(band, "Standard Deviation)", sep="("),
+                      Stats ="Standard Deviation")]
+      
+      dt_qts <- rbind(dt_qts, dt_med)
+      dt_qts <- rbind(dt_qts, dt_qt25)
+      dt_qts <- rbind(dt_qts, dt_qt75)
+      dt_qts <- rbind(dt_qts, dt_var)
+      dt_qts <- rbind(dt_qts, dt_mean)
+      dt_qts <- rbind(dt_qts, dt_sd)
+      dt_qts[ , `:=` (band=band, label=label)]
+      data.table::setnames(dt, "V1", band)
+      dt_stats <- rbind(dt_stats, dt_qts)
+    }
+  }
+  data.table::setnames(dt_stats, "Index", "Time")
+  return(dt_stats)
+  
+}
+
+stats_ts2 <- function(ts_tibble) {
+  V1 <- NULL
+  dt_stats <- data.table(
+    "Index" = structure(numeric(0), class = "Date"),
+    "Q25" = numeric(),
+    "Median" = numeric(),
+    "Q75" = numeric(),
+    "Variance" = numeric(),
+    "label" = character(),
+    "band" = character()
+  )
+  labels <- sits_labels(ts_tibble)
+  bands <- sits_bands(ts_tibble)
+  
+  for (label in labels){
+    dt_bylabel <- ts_tibble[ts_tibble$label == label,]
+    ts <- dt_bylabel$time_series
+    dt <- data.table::data.table(dplyr::bind_rows(ts))
+    
+    for(band in bands){
+      dt_qts <- data.table(
+        Index = ts_tibble$time_series[[1]]$Index
+      )
+      data.table::setnames(dt, band, "V1")
+      dt_med <- dt[, stats::median(V1), by = Index]
+      dt_qt25 <- dt[, stats::quantile(V1, 0.25), by = Index]
+      dt_qt75 <- dt[, stats::quantile(V1, 0.75), by = Index]
+      dt_var <- dt[, stats::var(V1), by = Index]
+      data.table::setnames(dt_qt25, "V1", "Q25")
+      data.table::setnames(dt_med, "V1", "Median")
+      data.table::setnames(dt_var, "V1", "Variance")
+      data.table::setnames(dt_qt75, "V1","Q75")
+      dt_qts <- merge(dt_qts, dt_med)
+      dt_qts <- merge(dt_qts, dt_qt25)
+      dt_qts <- merge(dt_qts, dt_qt75)
+      dt_qts <- merge(dt_qts, dt_var)
+      dt_qts[ , `:=` (band=band, label=label)]
+      data.table::setnames(dt, "V1", band)
+      dt_stats <- rbind(dt_stats, dt_qts)
+    }
+  }
+  return(dt_stats)
+  
+}
+
+plot_box <- function(dt){
+  
+  plot.df <- purrr::pmap_dfr(
+    list(dt$label, dt$time_series),
+    function(label, ts) {
+      lb <- as.character(label)
+      # extract the time series and convert
+      df <- tibble::tibble(Time = ts$Index, ts[-1], Band = lb)
+      return(df)
+    }
+  )
+  
+  
+  plot.df <- tidyr::pivot_longer(plot.df, cols = sits_bands(dt))
+  
+  gp <- ggplot(plot.df, aes(x=name, y=value, color=name)) +
+    geom_boxplot()  + ggplot2::facet_wrap(~Band)
+  
+  p <- graphics::plot(gp)
+  
+  return(invisible(p))
+  
+}
+
+corr_classes <- function(ts_tibble){
+  bands <- sits_bands(patterns)
+  df <- data.frame(Correlation=numeric(0),band=character(0))
+  labels <- patterns %>% dplyr::pull(label)
+
+  ts <- ts_tibble$time_series
+  
+  for (b in bands){
+    df_corr <- data.frame(
+      Correlation=round(cor(ts[[1]][b], ts[[2]][b])[1,1],3),
+      Band = b
+    )
+    df <- rbind(df, df_corr)
+  }
+  return(df)
+}
+
+ggplot(data=df, aes(x=Band, y=Correlation)) +
+  geom_bar(stat="identity", fill="steelblue")+
+  geom_text(aes(label=Correlation), vjust=-0.3, size=3.5)+
+  theme_minimal()
+
+corr_ts <- function(ts_tibble){
+  
+  col_names <- c("Var1", "Var2", "Value", "label")
+  df <- read.table(text = "",
+                   col.names = col_names)
+  labels <- ts_tibble %>% dplyr::pull(label)
+  for (l in labels){
+    dt_bylabel <- ts_tibble[ts_tibble$label == l,]
+    ts <- dt_bylabel$time_series
+    cormat <- round(cor(ts[[1]][2:14]),2)
+    melted_cormat <- melt(cormat)
+    melted_cormat$label <- l
+    df <- rbind(df, melted_cormat)
+  }
+  return(df)
+}
+
+
+
+plot_corr_matrix <- function(corr){
+  
+  gp <- ggplot(data = corr, aes(x=Var1, y=Var2, fill=value)) + 
+    geom_tile() + ggplot2::facet_wrap(~label) + 
+    #geom_text(aes(label = value), color = "white", size = 4)
+  
+  p <- graphics::plot(gp)
+  
+  return(invisible(p))
+  
+    
+}
+plot_stats <- function(dt, stats, bands){
+  dt <- dt[band %in% bands & Stats %in% stats]
+  
+  gp <- ggplot2::ggplot(data = dt, ggplot2::aes(
+    x = .data[["Time"]],
+    y = .data[["Value"]],
+    color = .data[["band"]],
+    linetype= .data[["Stats"]]
+    
+  )) +  ggplot2::facet_wrap(~label) +
+    ggplot2::geom_line()
+  
+  gp <- gp + ggplot2::facet_wrap(~label)
+  
+  gp <- gp +
+    ggplot2::theme(legend.position = "bottom") +
+    ggplot2::guides(colour = ggplot2::guide_legend(title = "Bands")) +
+    ggplot2::ylab("Value")
+  
+  p <- graphics::plot(gp)
+  
+  return(invisible(p))
+  
+}
+plot_patterns(patterns)
+plot_patterns <- function(x, year_grid = FALSE){
+  plot.df <- purrr::pmap_dfr(
+    list(x$label, x$time_series),
+    function(label, ts) {
+      lb <- as.character(label)
+      # extract the time series and convert
+      df <- tibble::tibble(Time = ts$Index, ts[-1], Pattern = lb)
+      return(df)
+    }
+  )
+
+  
+  
+  plot.df <- tidyr::pivot_longer(plot.df, cols = sits_bands(x))
+  
+    # Plot temporal patterns
+  gp <- ggplot2::ggplot(plot.df, ggplot2::aes(
+    x = .data[["Time"]],
+    y = .data[["value"]],
+    colour = .data[["name"]]
+  )) +
+    ggplot2::geom_line()
+  
+  if (year_grid)
+    gp <- gp + ggplot2::facet_grid(year ~ Pattern)
+  else
+    gp <- gp + ggplot2::facet_wrap(~Pattern)
+  
+  gp <- gp +
+    ggplot2::theme(legend.position = "bottom") +
+    ggplot2::guides(colour = ggplot2::guide_legend(title = "Bands")) +
+    ggplot2::ylab("Value")
+  
+  p <- graphics::plot(gp)
+  
+  return(invisible(p))
+}
+
+plot_stats <- function(band, list_stats){
+  
+  
 }
 
 find_sample <- function(data, long, lat){
@@ -158,13 +458,13 @@ samples.df <- read.csv(file = '/home/leonardo.vieira/git/Time-Series-Analysis/da
 # Create a S2-SEN2COR_10_16D_STK-1 sits cube.
 sent_cube <- sits_cube(
   source        = "BDC",
-  collection    = "S2-SEN2COR_10_16D_STK-1",
+  collection    = "S2-16D-2",
   bands         = c("B01", "B02","B03","B04","B05","B06",
-                    "B07","B08","B09","B11", "B12", "NDVI", "EVI", "CLOUD"),
-  tiles         = c("077093","077094","077095","078093","078094",
-                    "078095","079093","079094","079095"), 
-  start_date    = "2017-08-06", 
-  end_date      = "2019-07-31" 
+                    "B07","B08", "B8A", "B09","B11", "B12", "NDVI", "EVI", "CLOUD"),
+  tiles         = c("012014", "012015", "012016", "013014", "013015", "013016"
+                    ,"014014", "014015", "014016"), 
+  start_date    = "2018-07-24", 
+  end_date      = "2021-07-16" 
 )
 
 
@@ -172,15 +472,15 @@ sent_cube <- sits_cube(
 # Get the time series from sits cube
 input_data.tb <- sits_get_data(
   cube = sent_cube, 
-  samples = "/home/leonardo.vieira/git/Time-Series-Analysis/data/csv/samples_def2.csv",
+  samples = "/home/leonardo.vieira/git/Time-Series-Analysis/data/csv/S2-16D/samples_S2-16D-2-p1.csv",
   bands      = c("B01", "B02","B03","B04","B05","B06",
-                 "B07","B08","B09","B11", "B12", "NDVI", "EVI", "CLOUD"),
+                 "B07","B08","B8A","B09","B11", "B12", "NDVI", "EVI", "CLOUD"),
   multicores = 16,
   output_dir = "/home/leonardo.vieira/git/Time-Series-Analysis/data/temps"
 )
 
 # Add tile information on data frame
-input_data.tb <- add_tile(input_data.tb, "../data/shp/roi/roi.shp")
+input_data.tb <- add_tile(input_data.tb, "/home/leonardo.vieira/git/Time-Series-Analysis/data/shp/roi.shp")
 
 # Save the data set in a rds file
 saveRDS(input_data.tb, file = "../data/rds/samples_update.rds")
@@ -188,8 +488,9 @@ saveRDS(input_data.tb, file = "../data/rds/samples_update.rds")
 saveRDS(samples, file = "../data/rds/samples.rds")
 
 # Read previous data saved
-input_data.tb <- readRDS("../data/rds/samples_update.rds")
-
+input_data.tb <- readRDS("../data/rds/samples_S2-16D.rds")
+samples <- readRDS("../data/rds/samples_S2-16D.rds")
+patterns <- sits_patterns(samples)
 
 # Create shape file from samples
 test_sf<-sits_as_sf(test_out)
@@ -211,11 +512,13 @@ for (row in head(input_data.tb, 1)){
   print(row)
 }
 
-
+library(dplyr)
+nrow(samples[samples$label == 'Forest', ])
+nrow(samples[samples$label == 'Deforested', ])
 
 # ====================== Statistics ============================================
 # Deforestation
-band_tb <- sits_select(input_data.tb[input_data.tb$label == "Desmatamento",], "NDVI")
+band_tb <- sits_select(samples[samples$label == "Deforested",], "NDVI")
 ts <- band_tb$time_series
 dt_byrows <- data.table::data.table(dplyr::bind_rows(ts))
 stats_def_NDVI <- create_iqr(dt_byrows, "NDVI")
@@ -224,9 +527,11 @@ stats_def_NDVI <- create_iqr(dt_byrows, "NDVI")
 band_tb <- sits_select(input_data.tb[input_data.tb$label == "Desmatamento",], "NDVI")
 ts <- band_tb$time_series
 dt_byrows <- data.table::data.table(dplyr::bind_rows(ts))
+
+dt_byrows[,x:= list(list(cor(dt_byrows))), by = Index]
 stats_for_NDVI <- create_iqr(dt_byrows, "NDVI")
 
-
+length(dt_byrows$B01)
 stats_def_NDVI
 stats_for_NDVI
 
@@ -254,21 +559,28 @@ list_samples <- list()
 
 floresta.tb <- filter(input_data.tb, label == "Floresta")
 
-input_all_filtered <- input_data.tb[0, ] 
+
+tiles <- sent_cube$tile
+
+input_all_filtered <- samples[0, ] 
 
 for (tile in tiles){
-  input_forest <- filter_vband(input_data.tb, "2017-08-13", 0.65, 1,"Floresta", tile)
-  input_deforestation <- filter_vband(input_data.tb, "2017-08-13", 0, 0.865,"Desmatamento", tile)
-  for (i in 2:46){
-    input_forest <- filter_vband(input_forest, dates[i], 0.7, 1,"Floresta", tile)
+  row <- dplyr::filter(sent_cube, tile == t)
+  dates <-  (row$file_info[[1]]$date[row$file_info[[1]]$cloud_cover < 5.0 & row$file_info[[1]]$band == "NDVI"])
+  input_forest <- filter_vband(samples, dates[1], 0.60, 1,"Floresta", tile)
+  input_deforestation <- filter_vband(samples, dates[1], -1, 0.865,"Desmatamento", tile)
+  for (i in 2:length(dates)){
+    input_forest <- filter_vband(input_forest, dates[i], 0.60, 1,"Floresta", tile)
     
-    input_deforestation <- filter_vband(input_deforestation, dates[i], 0, 0.865,"Desmatamento", tile)
+    input_deforestation <- filter_vband(input_deforestation, dates[i], -1, 0.865,"Desmatamento", tile)
   } 
   input_all_filtered <- rbind(input_all_filtered, input_forest)
   input_all_filtered <- rbind(input_all_filtered, input_deforestation)
 }
 
 input_all_filtered
+patterns2 <- sits_patterns(samples)
+plot_patterns(patterns2)
 filter(floresta.tb, sample_ok == TRUE)
 
 # Plot time series * Not work yet *
@@ -284,8 +596,77 @@ for (t in tiles) {
 }
 
 samples$label[samples$label == 'Floresta'] <- 'Forest'
-samples$label[samples$label == 'Deforestation'] <- 'Deforested'
+samples$label[samples$label == 'Desmatamento'] <- 'Deforestation'
 head(samples)
 test <- head(input_data.filtered, 5)
+my.table[, lapply(.SD, mean), by=gbc]
+# helper
 
-test
+# merge two tibbles in one bind_rows(tibble1, tibble 2)
+
+saveRDS(input_all_filtered, file = "../data/rds/samples.rds")
+gp <- ggplot2::ggplot(test, ggplot2::aes(x = Index, y = c(med_NDVI, qt75_NDVI, var_NDVI))) +
+  ggplot2::geom_line()
+
+graphics::plot(gp)
+
+
+patterns
+
+stats <- stats_ts(samples)
+
+plot.df <- purrr::pmap_dfr(
+  list(test$label, test$time_series),
+  function(label, ts) {
+    lb <- as.character(label)
+    # extract the time series and convert
+    df <- tibble::tibble(Time = ts$Index, ts[-1], Pattern = lb)
+    return(df)
+  }
+)
+
+
+patterns$time_series[[1]]$Index
+
+plot(sent_cube,
+     red = "B04", blue = "B02", green = "B03",
+     date = "2018-07-28"
+)
+
+get_ts <- function(path){
+  df <- head(samples,0)
+  count <- 2
+  save_path <- "/home/leonardo.vieira/git/Time-Series-Analysis/data/rds/"
+  for(f in list.files(path)){
+    file_dir <- paste(path, f, sep="")
+    count <- count + 1
+    print(file_dir)
+    input_data.tb <- sits_get_data(
+      cube = sent_cube, 
+      samples = file_dir,
+      bands      = c("B01", "B02","B03","B04","B05","B06",
+                     "B07","B08","B8A","B09","B11", "B12", "NDVI", "EVI", "CLOUD"),
+      multicores = 16,
+      output_dir = "/home/leonardo.vieira/git/Time-Series-Analysis/data/temps"
+    )
+    df <- rbind(df, input_data.tb)
+    save_file <- paste(save_path, as.character(count), sep ="")
+    saveRDS(input_data.tb, file = paste(save_file,".rds", sep="") )
+    
+  }
+  saveRDS(df, file = "/home/leonardo.vieira/git/Time-Series-Analysis/data/rds/samples-S2-16D.rds")
+}
+
+get_ts("/home/leonardo.vieira/git/Time-Series-Analysis/data/csv/S2-16D/")
+
+
+
+for(t in sent_cube$tile){
+  row <- dplyr::filter(sent_cube, tile == t)
+  date <- (row$file_info[[1]]$date[row$file_info[[1]]$cloud_cover
+                                   == min(
+                                     row$file_info[[1]]$cloud_cover)
+                                   & row$file_info[[1]]$band == "NDVI"])
+  download_raster(sent_cube, date[[1]], c("B02","B03","B04","NDVI"), t, "../data/imagens/raster/")
+}
+
