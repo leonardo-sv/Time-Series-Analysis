@@ -110,11 +110,21 @@ plot_patterns(patterns)
 
 The resulting patterns allow us to analyze the behavior of the deforestation and Forest classes over two years of observations. The Forest class has less variation response than deforestation over the years; this shows that it should be possible to generate a reasonable separation between the classes. We can gain some insights into the expected classes by considering the vegetation indexes. The forest response is more homogeneous over the period with high values than the deforestation class, where the responses present high variation. Deforestation is the highest response occurring in the rainy season, with a considerable drop in the dry season. Contrasting the indexes, the deforestation response to NDVI and EVI presents a solid linear positive correlation. For the forest response, there is no strong linear correlation between the indexes.
 
+#Intra-class band Correlation
+
+The previous patterns are sound indicative of the class's behavior. Thus, their Correlation can support the previous analysis. The code below calculates the intra-class band correlation and plots it. Here, we desire to analyze numerically the relationship between the pattern bands of deforestation and Forest classes separately.
+
 ```{r}
 cor <- corr_ts(patterns)
 plot_corr_matrix(cor)
   
 ```
+The intra-class Correlation of the band's patterns to forest patterns reveals a high correlation to all bands except the NDVI band. In the deforestation class, we can separate four groups with a  high correlation: B01 to B05, B06 to B09, B11 to B12, and NDVI and EVI. 
+
+
+
+
+The code below calculates the inter-class band correlation and plots it. Here, we want to analyze the band patterns correlation class by class,  comparing deforestation bands with forest bands.
 
 ```{r}
 df <- corr_classes(patterns)
@@ -125,5 +135,8 @@ ggplot(data=df, aes(x=Band, y=Correlation)) +
   theme_minimal()
 
 ```
+
+
+# Bands Analysis
 
 

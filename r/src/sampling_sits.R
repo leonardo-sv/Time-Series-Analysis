@@ -500,16 +500,16 @@ best_model_voting <- function(score, n_bands = "all"){
 
 define_label_cluster <- function(predict, gt){
   df <- data.frame (labels = gt,
-                    cluster = predict_clust
+                    cluster = predict
   )
   
   cluster_label <- df %>% group_by(cluster, labels) %>% 
-    summarise(total_count=n()) %>%
+    summarise(total_count=n(),.groups = "drop_last") %>%
     mutate(freq_by_cluster = total_count / sum(total_count)) %>%
     filter(freq_by_cluster == max(freq_by_cluster)) 
   
-  
-  return(sapply(df$cluster, function(s) t[t$cluster == s,]$labels))
+  # 
+  return(sapply(df$cluster, function(s) cluster_label[cluster_label$cluster == s,]$labels))
   
 }
 
@@ -849,6 +849,10 @@ df %>% group_by(cluster, labels) %>%
 frequency  %>%
   filter(freq_by_cluster == max(freq_by_cluster)) 
 
-sapply(accuracy_model,var1=hclusters,var2=gt)
+cluster_dendro_1 <- hclusters
 
-attributes(hclusters[[1]])
+ACC <- sapply(hclusters,accuracy_model,gt=gt)
+ACC <- acc
+accuracy_model
+
+metrics <- cbind(metrics, ACC)
