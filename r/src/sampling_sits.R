@@ -5,6 +5,7 @@ library(dplyr)
 library(factoextra)
 library(data.table)
 library(sf)
+library(dtwclust)
 
 
 # =============== Functions ====================================================
@@ -31,6 +32,18 @@ filter_vband <- function(input_data, obs_date, min_value, max_value, label_targe
   return(input_data)
     
   
+}
+
+subset_by_date <- function(input_data, start_date_, end_date_) {
+  start_pos <- which(input_data$time_series[[1]]$Index == start_date_)
+  end_pos <- which(input_data$time_series[[1]]$Index == end_date_)
+  
+  return(
+    input_data %>%
+      dplyr::mutate(start_date = start_date_, end_date = end_date_, time_series
+             = lapply(input_data$time_series, '[', start_pos:end_pos,)) %>%
+      dplyr::select(latitude,longitude,start_date,end_date,label,cube,time_series)
+  )
 }
 
 filter_band <- function(input_data, obs_date, min_value, max_value, label_target){
@@ -330,20 +343,19 @@ corr_ts <- function(ts_tibble){
   for (l in labels){
     dt_bylabel <- ts_tibble[ts_tibble$label == l,]
     ts <- dt_bylabel$time_series
-    cormat <- round(cor(ts[[1]][2:14]),2)
+    cormat <- round(cor(ts[[1]][2:15]),2)
     melted_cormat <- melt(cormat)
     melted_cormat$label <- l
     df <- rbind(df, melted_cormat)
   }
   return(df)
+
 }
-
-
 
 plot_corr_matrix <- function(corr){
   
   gp <- ggplot(data = corr, aes(x=Var1, y=Var2, fill=value)) + 
-    geom_tile() + ggplot2::facet_wrap(~label) + 
+    geom_tile() + ggplot2::facet_wrap(~label)  
     #geom_text(aes(label = value), color = "white", size = 4)
   
   p <- graphics::plot(gp)
@@ -446,7 +458,99 @@ download_raster <- function(cube, date_, bands_, tile_, dir) {
   }
 }
 
+best_model_voting <- function(score, n_bands = "all"){
+  best_model <- numeric(nrow(score))
+  index <- c(1:nrow(score))
+  score <- cbind(score, best_model)
+  score <- cbind(score, index)
+  
+  minimized <- c("VI","COP", "DB", "DBstar", "K", "T")
+  maximized <- c("RI", "ARI", "J", "FM", "NMIM", "Sil", "D", "CH", "SF", "MPC",
+                 "SC", "PBMF", "ACC")
+  
+  if(is.numeric(n_bands)){
+    compute_score <- score[score$n_bands == n_bands,]
+  }
+  else{
+    compute_score <- score
+  }
+  
+  for(i in colnames(score)){
+    if (i %in% maximized){
+      index <-compute_score[which.max(compute_score[i][,1]),]$index
+      score[score$index == index,]$best_model <- 
+        score[score$index == index,]$best_model +1
+      
+    }
+    else if (i %in% minimized){
+      index <-compute_score[which.min(compute_score[i][,1]),]$index
+      score[score$index == index,]$best_model <- 
+        score[score$index == index,]$best_model +1
+      
+    }
+    
+  }
+  colnames(score)[which(names(score) == "best_model")] <- 
+    paste("best_model", n_bands, sep="_")
+  
+  return(subset(score, select = -index))
+  
+  
+}
 
+define_label_cluster <- function(predict, gt){
+  df <- data.frame (labels = gt,
+                    cluster = predict_clust
+  )
+  
+  cluster_label <- df %>% group_by(cluster, labels) %>% 
+    summarise(total_count=n()) %>%
+    mutate(freq_by_cluster = total_count / sum(total_count)) %>%
+    filter(freq_by_cluster == max(freq_by_cluster)) 
+  
+  
+  return(sapply(df$cluster, function(s) t[t$cluster == s,]$labels))
+  
+}
+
+accuracy_model <- function(model, gt){
+  predict_clust <- dtwclust::predict(model, model$datalist)
+  cluster_labeled <- define_label_cluster(predict_clust, gt)
+  hits <- as.integer(gt == cluster_labeled)
+  acc <- sum(hits)/length(hits)
+  return(acc)
+}
+
+band_analysis_cluster <- function(samples, bands, max_nf){
+  
+  combns_hcluster <- list()
+  
+  for(nf in 1:max_nf){
+    combinations <- combn(bands,nf)
+    
+    for(c in 1:length(combinations[1,])){
+      print(combinations[,c])
+      comb_bands <- combinations[,c]
+      values <- sits_values(samples, comb_bands, format = "cases_dates_bands")
+      
+      
+      dendro <- dtwclust::tsclust(
+        series = values,
+        type = "hierarchical",
+        k = max(nrow(values)-1, 2),
+        distance = "dtw_basic",
+        control = dtwclust::hierarchical_control(method = "ward.D2")
+        
+      )
+      dendro$bands <- comb_bands
+      combns_hcluster <- append(combns_hcluster,list(dendro))
+      
+    }
+    
+  }
+  return(combns_hcluster)
+  
+}
 
 
 # =============== Execution ====================================================
@@ -466,7 +570,6 @@ sent_cube <- sits_cube(
   start_date    = "2018-07-24", 
   end_date      = "2021-07-16" 
 )
-
 
 
 # Get the time series from sits cube
@@ -670,3 +773,82 @@ for(t in sent_cube$tile){
   download_raster(sent_cube, date[[1]], c("B02","B03","B04","NDVI"), t, "../data/imagens/raster/")
 }
 
+bands <- c("B04","B07","B11","NDVI", "EVI")
+
+values <- sits_values(samples_test, bands, format = "cases_dates_bands")
+
+# call dtwclust and get the resulting dendrogram
+
+for(nf in 1:5){
+  combinations <- combn(bands,nf)
+  print(length((combinations[1,])))
+}
+
+
+
+
+
+
+  
+# ----------
+samples_013015 <- samples[samples$tile == "013015",]
+samples_013015_1y <-subset_by_date (samples_013015, "2018-07-28","2019-07-12")
+values <- sits_values(samples_013015_1y, "NDVI", format = "cases_dates_bands")
+values <- sits_values(samples, comb_bands, format = "cases_dates_bands")
+bands <- c("B05", "B07","B11","NDVI", "EVI")
+
+hclusters <- band_analysis_cluster(samples_013015_1y, bands, 5)
+gt <- factor(samples_013015_1y$label)
+vi_evaluators <- cvi_evaluators("valid", ground.truth = gt)
+score_fun <- vi_evaluators$score
+
+metrics <- score_fun(hclusters)
+
+hclusters[[1]]$cluster$bands <- bands
+
+
+
+score <- as.data.frame(metrics)
+cbands <- c()
+n_bands <- c()
+inte <- 0
+for(nf in 1:5){
+  comb <-combn(bands,nf)
+  for(col in 1:ncol(comb)){
+    cbands <- append(cbands, paste(comb[,col],collapse='/'))
+    n_bands <- append(n_bands, nf)
+  }
+}
+score <- cbind(score, cbands)
+score <- cbind(score, n_bands)
+
+score <- best_model_voting(score)
+score <- best_model_voting(score,1)
+score <- best_model_voting(score,2)
+score <- best_model_voting(score,3)
+score <- best_model_voting(score,4)
+score <- best_model_voting(score,5)
+
+
+df <- data.frame (labels = gt,
+                  cluster = predict_clust
+)
+
+unique(df$labels)
+unique(df$cluster)
+
+agg_tbl <- df %>% group_by(cluster, labels) %>% 
+  summarise(total_count=n(),
+            .groups = 'drop')
+
+df %>% group_by(cluster, labels) %>% 
+  summarise(total_count=n()) %>%
+  mutate(freq_by_cluster = total_count / sum(total_count))
+
+
+frequency  %>%
+  filter(freq_by_cluster == max(freq_by_cluster)) 
+
+sapply(accuracy_model,var1=hclusters,var2=gt)
+
+attributes(hclusters[[1]])

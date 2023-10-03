@@ -36,6 +36,10 @@ Statistical analysis is a mathematical procedure to investigate trends, patterns
 The samples using a PRODES map to define their geographic location (longitude and latitude) and S2_SEN2COR_10_16D_STK-1 BDC cube provide the time series values. PRODES methodology allows us to define forest samples where it is possible to define a single class sample over two consecutive years safely. Considering deforestation areas, it is impossible to ensure a single class sample over these two years because the land cover can change along the selected period, e.g., pasture. However, it is possible to conclude that there was deforestation at the beginning of the time series period, and the ground truth is not a primary forest in all periods. The samples have 77636 time series: 64561  in forest and 28668 deforested areas. The R code above imports the samples and the first six samples.
 
 ```{r}
+getwd()
+```
+
+```{r}
 samples <- readRDS("../../data/rds/samples.rds")
 head(samples)
 ```
@@ -52,7 +56,7 @@ ts <- forest_samples$time_series
 dt <- dt <- data.table::data.table(dplyr::bind_rows(ts))
 summary(dt)
 ```
-
+2,591  6,705
 * Deforestation samples 
  
 ```{r}
