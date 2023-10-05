@@ -355,7 +355,10 @@ corr_ts <- function(ts_tibble){
 plot_corr_matrix <- function(corr){
   
   gp <- ggplot(data = corr, aes(x=Var1, y=Var2, fill=value)) + 
-    geom_tile() + ggplot2::facet_wrap(~label)  
+    geom_tile(color = "white",
+              lwd = 0.5,
+              linetype = 1) + ggplot2::facet_wrap(~label) +
+    scale_fill_gradient2(low = "blue", high = "red", mid="white")
     #geom_text(aes(label = value), color = "white", size = 4)
   
   p <- graphics::plot(gp)
@@ -802,12 +805,13 @@ gt <- factor(samples_013015_1y$label)
 vi_evaluators <- cvi_evaluators("valid", ground.truth = gt)
 score_fun <- vi_evaluators$score
 
-metrics <- score_fun(hclusters)
+
 
 hclusters[[1]]$cluster$bands <- bands
 
-
-
+metrics <- score_fun(hclusters)
+ACC <- sapply(hclusters,accuracy_model,gt=gt)
+metrics <- cbind(metrics, ACC)
 score <- as.data.frame(metrics)
 cbands <- c()
 n_bands <- c()
@@ -856,3 +860,4 @@ ACC <- acc
 accuracy_model
 
 metrics <- cbind(metrics, ACC)
+write.csv(metrics, "/home/leonardo.vieira/git/Time-Series-Analysis/data/csv/metrics.csv", row.names=TRUE)

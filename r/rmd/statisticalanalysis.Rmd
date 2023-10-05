@@ -35,9 +35,6 @@ Statistical analysis is a mathematical procedure to investigate trends, patterns
 
 The samples using a PRODES map to define their geographic location (longitude and latitude) and S2_SEN2COR_10_16D_STK-1 BDC cube provide the time series values. PRODES methodology allows us to define forest samples where it is possible to define a single class sample over two consecutive years safely. Considering deforestation areas, it is impossible to ensure a single class sample over these two years because the land cover can change along the selected period, e.g., pasture. However, it is possible to conclude that there was deforestation at the beginning of the time series period, and the ground truth is not a primary forest in all periods. The samples have 77636 time series: 64561  in forest and 28668 deforested areas. The R code above imports the samples and the first six samples.
 
-```{r}
-getwd()
-```
 
 ```{r}
 samples <- readRDS("../../data/rds/samples.rds")
@@ -119,12 +116,13 @@ cor <- corr_ts(patterns)
 plot_corr_matrix(cor)
   
 ```
-The intra-class Correlation of the band's patterns to forest patterns reveals a high correlation to all bands except the NDVI band. In the deforestation class, we can separate four groups with a  high correlation: B01 to B05, B06 to B09, B11 to B12, and NDVI and EVI. 
+
+The intra-class Correlation of the band's patterns to forest patterns reveals a high positive correlation to all bands except the NDVI band, which presents a negative correlation to other bands. We can separate four groups with a  high positive correlation in the deforestation class: 1 (B01 to B05), 2 (B06 to B09), 3 (B11 to B12), and 4 (NDVI and EVI). Analyze the groups against each other: Group 1 practically has no Correlation to other groups; Group 2 presents a negative correlation to 3 and a positive correlation to 4; Group 3 presents a negative Correlation to 4. The previous analysis covers group 4 correlation against other groups. 
 
 
 
 
-The code below calculates the inter-class band correlation and plots it. Here, we want to analyze the band patterns correlation class by class,  comparing deforestation bands with forest bands.
+The code below calculates the inter-class band correlation and plots it. Here, we want to analyze the band patterns correlation class against class, comparing the respective band of deforestation patterns with forest patterns.
 
 ```{r}
 df <- corr_classes(patterns)
@@ -135,8 +133,61 @@ ggplot(data=df, aes(x=Band, y=Correlation)) +
   theme_minimal()
 
 ```
-
+The inter-class Correlation shows a high positive correlation between the band patterns B01, B02, B03, B04, and B05. And a negative correlation to bands B08 and EVI. The other bands practically presented no correlation between the patterns of the respective bands of forest class and deforestation class.
 
 # Bands Analysis
 
+The previous intra-class Correlation analysis reveals that some band patterns are highly correlated. Indicating that some patterns have almost the same information, making it redundant to include them in an ML model. Including these highly correlated patterns in a model can lead to a multicollinearity problem. To avoid this problem, we developed a strategy to select features based on correlation analysis (Intra-class and Inter-class analysis). Based on the Intra-class correlation information to each class, we observed four groups with a high positive correlation considering the deforestation class. Through that information, we select the following bands by groups.  
+
+* Group 1: Select band B05 because the band presents no correlation to other groups (Intra-class Correlation chart).
+
+*Group 2: Select band B07 because the band presents the lowest  Inter-class Correlation.
+
+*Group 3: Select band B11 because the band presents the lowest  Inter-class Correlation.
+
+*Group 4: Select the bands NDVI and EVI. The NDVI negatively correlates to other bands considering the forest class (Intra-class Correlation chart), and the band presents the lowest Intra-class Correlation. The EVI is also an index vegetation that presents a similar behavior in the deforestation class and negatively correlates to NDVI in the forest class.
+
+The analysis generates a list of selected bands (B05, B07, B11, NDVI, and EVI). The subsequent analysis uses this list of bands to verify how a hierarchical clustering method behaves with a distinct combination of the band list. The code below generates all possible combinations and produces one model by combination.
+
+
+```{r}
+bands <- c("B05", "B07","B11","NDVI", "EVI")
+samples_013015 <- samples[samples$tile == "013015",]
+samples_013015_1y <-subset_by_date (samples_013015, "2018-07-28","2019-07-12")
+hclusters <- band_analysis_cluster(samples_013015_1y, bands, 5)
+```
+
+
+```{r}
+gt <- factor(samples_013015_1y$label)
+vi_evaluators <- cvi_evaluators("valid", ground.truth = gt)
+score_fun <- vi_evaluators$score
+
+metrics <- score_fun(hclusters)
+
+ACC <- sapply(hclusters,accuracy_model,gt=gt)
+metrics <- cbind(metrics, ACC)
+score <- as.data.frame(metrics)
+cbands <- c()
+n_bands <- c()
+inte <- 0
+for(nf in 1:5){
+  comb <-combn(bands,nf)
+  for(col in 1:ncol(comb)){
+    cbands <- append(cbands, paste(comb[,col],collapse='/'))
+    n_bands <- append(n_bands, nf)
+  }
+}
+score <- cbind(score, cbands)
+score <- cbind(score, n_bands)
+
+score <- best_model_voting(score)
+score <- best_model_voting(score,1)
+score <- best_model_voting(score,2)
+score <- best_model_voting(score,3)
+score <- best_model_voting(score,4)
+score <- best_model_voting(score,5)
+
+score
+```
 
