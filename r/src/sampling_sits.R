@@ -13,9 +13,12 @@ library(dtwclust)
 # This function allows filter a time series data set ("S2-SEN2COR_10_16D_STK-1")
 # based in a specific date, label, tile, value, at NDVI band. The objective is 
 # to search for possible outliers in data set. 
-filter_vband <- function(input_data, obs_date, min_value, max_value, label_target, tile_target){
-  print(tile_target)
-  print(as.Date(obs_date))
+filter_vband <- function(input_data,
+                         obs_date,
+                         min_value,
+                         max_value,
+                         label_target,
+                         tile_target){
   pre_filter <- filter(input_data, label == label_target, tile == tile_target)
   
   if(obs_date %in% input_data$time_series[[1]]$Index){
@@ -26,14 +29,10 @@ filter_vband <- function(input_data, obs_date, min_value, max_value, label_targe
                         x$NDVI > min_value & 
                         x$NDVI < max_value))))))
     }
-  
-  
-  
   return(input_data)
-    
-  
 }
-
+# Function that realize a subset of a time-series tibble. It split the time-series
+# considering a start and end dates generating a new data.
 subset_by_date <- function(input_data, start_date_, end_date_) {
   start_pos <- which(input_data$time_series[[1]]$Index == start_date_)
   end_pos <- which(input_data$time_series[[1]]$Index == end_date_)
@@ -42,12 +41,15 @@ subset_by_date <- function(input_data, start_date_, end_date_) {
     input_data %>%
       dplyr::mutate(start_date = start_date_, end_date = end_date_, time_series
              = lapply(input_data$time_series, '[', start_pos:end_pos,)) %>%
-      dplyr::select(latitude,longitude,start_date,end_date,label,cube,time_series)
+      dplyr::select(latitude,longitude,start_date,
+                    end_date,label,cube, tile,time_series)
   )
 }
 
-filter_band <- function(input_data, obs_date, min_value, max_value, label_target){
-  print(tile_target)
+# Function that realize a filter using a minimum and maximum limit of the band
+# value.
+filter_band <- function(input_data, obs_date, min_value,
+                        max_value, label_target){
   pre_filter <- filter(input_data, label == label_target)
   return(
     filter(pre_filter, unlist(
@@ -68,13 +70,25 @@ find_outiers <- function(samples){
   
 } 
 
-test<-head(input_data.tb, 5)
-test2 <- filter_by_value_date(test, "2017-08-13", 0.0, 0.68, "Floresta")
-
 # Example: a<-find_outliers(input_data.tb, "2018-06-26", -0.81, 0.1, Desmatamento, 079093)
 
 # This function adds the tile column in a S2-SEN2COR_10_16D_STK-1 cube data set.
-add_tile <- function(data.df, shapefile){
+add_tile <- function(data, shapefile){
+  nc <- st_read(shapefile)
+  print("points")
+  points <- mapply(function(x,y) st_point(c(x,y), 4326),
+                   data$longitude,data$latitude,SIMPLIFY = FALSE)
+  print("lp")
+  lp <- lapply(points, st_within, nc, sparse=FALSE)
+  print("wlp")
+  wlp <- lapply(lp, which)
+  print("ltiles")
+  ltiles <- lapply(wlp, function(s) nc$tile[s])
+  tiles <- rapply(ltiles, function(x) head(x, 1))
+  return(data %>% mutate(tile=tiles))
+  
+}
+add_tile_2 <- function(data.df, shapefile){
   nc <- st_read(shapefile)
   points <- mapply(function(x,y) st_point(c(x,y), 4326),
                    data.df$longitude,data.df$latitude,SIMPLIFY = FALSE)
@@ -94,6 +108,12 @@ add_tile <- function(data.df, shapefile){
   )))
 
 }
+
+within_pos <- function(point, geom){
+  lp <- lapply(point, st_within, geom, sparse=FALSE)
+  
+}
+
 add_tile_1 <- function(data.df) {
   return(
     data.df %>% mutate(tile =
@@ -309,6 +329,7 @@ plot_box <- function(dt){
   p <- graphics::plot(gp)
   
   return(invisible(p))
+  #return(p)
   
 }
 
@@ -329,10 +350,7 @@ corr_classes <- function(ts_tibble){
   return(df)
 }
 
-ggplot(data=df, aes(x=Band, y=Correlation)) +
-  geom_bar(stat="identity", fill="steelblue")+
-  geom_text(aes(label=Correlation), vjust=-0.3, size=3.5)+
-  theme_minimal()
+
 
 corr_ts <- function(ts_tibble){
   
@@ -367,6 +385,7 @@ plot_corr_matrix <- function(corr){
   
     
 }
+
 plot_stats <- function(dt, stats, bands){
   dt <- dt[band %in% bands & Stats %in% stats]
   
@@ -391,7 +410,7 @@ plot_stats <- function(dt, stats, bands){
   return(invisible(p))
   
 }
-plot_patterns(patterns)
+
 plot_patterns <- function(x, year_grid = FALSE){
   plot.df <- purrr::pmap_dfr(
     list(x$label, x$time_series),
@@ -407,7 +426,7 @@ plot_patterns <- function(x, year_grid = FALSE){
   
   plot.df <- tidyr::pivot_longer(plot.df, cols = sits_bands(x))
   
-    # Plot temporal patterns
+  # Plot temporal patterns
   gp <- ggplot2::ggplot(plot.df, ggplot2::aes(
     x = .data[["Time"]],
     y = .data[["value"]],
@@ -430,10 +449,6 @@ plot_patterns <- function(x, year_grid = FALSE){
   return(invisible(p))
 }
 
-plot_stats <- function(band, list_stats){
-  
-  
-}
 
 find_sample <- function(data, long, lat){
   return(filter(data, (longitude > long - 0.0003 & longitude < long + 0.0003)
@@ -441,24 +456,63 @@ find_sample <- function(data, long, lat){
 }
 
 download_raster <- function(cube, date_, bands_, tile_, dir) {
-  new_path <- paste(dir, tile_, sep = "/")
+  new_path <- paste(dir, tile_, sep = "")
   if (!dir.exists(new_path)){
     dir.create(new_path)
+    print(new_path)
   }
   
   file_info_tile <-cube[cube$tile == tile_,]$file_info[[1]]
   
   for (b in bands_){
     path <- filter(file_info_tile, date==date_, band==b)$path
-    print(path)
+    #print(path)
     url <- strsplit(path, "l/")[[1]][2] 
     splited_url <- strsplit(url, "/")
     name_file <- tail(splited_url[[1]], n=1)
     name_file <- strsplit(name_file, ".tif")[[1]][1]
     name_file <- paste(name_file, ".tif", sep="")
     path_file <- paste(new_path, name_file, sep="/")
+    print(path_file)
+    print(url)
     download.file(url, path_file)
   }
+}
+
+voting_nbands <- function(score, n_bands, fuzzy_score = FALSE, no_hierarchical = FALSE){
+  score_eval <- score[lengths(strsplit(score$bands, '/')) == n_bands,]
+  best_model <- voting_best(score_eval, fuzzy_score, no_hierarchical)
+  bands <- score_eval[best_model,]$bands
+  return(which(score$bands == bands))
+}
+
+voting_best <- function(score, fuzzy_score = FALSE, no_hierarchical = FALSE){
+  
+  eval_metrics <- c("VI","COP",  "RI", "ARI", "J", 
+                    "FM", "NMIM", "Sil", "D", 
+                    "ACC", "PREC", "SENS", "F1", "SPEC")
+  fuzzy_metrics <- c("MPC", "K", "T", "SC", "PBMF")
+  no_hierarchical_metrics <- c("DB", "DBstar", "CH", "SF")
+  
+  if (fuzzy_score){
+    eval_metrics <- c(eval_metrics, fuzzy_metrics)
+  }
+  
+  if (no_hierarchical){
+    eval_metrics <- c(eval_metrics, no_hierarchical_metrics)
+  }
+  
+  score_eval <- score[, which(names(score) %in% eval_metrics)]
+  
+  
+  best_by_metrics <- apply(score_eval, 2L, which.max)
+  
+  majority <- function(x) {
+    ux <- unique(x)
+    ux[which.max(tabulate(match(x, ux)))]
+  }
+  majority(best_by_metrics)
+  
 }
 
 best_model_voting <- function(score, n_bands = "all"){
@@ -469,7 +523,7 @@ best_model_voting <- function(score, n_bands = "all"){
   
   minimized <- c("VI","COP", "DB", "DBstar", "K", "T")
   maximized <- c("RI", "ARI", "J", "FM", "NMIM", "Sil", "D", "CH", "SF", "MPC",
-                 "SC", "PBMF", "ACC")
+                 "SC", "PBMF", "ACC", "PREC", "SENS", "F1", "SPEC")
   
   if(is.numeric(n_bands)){
     compute_score <- score[score$n_bands == n_bands,]
@@ -501,9 +555,9 @@ best_model_voting <- function(score, n_bands = "all"){
   
 }
 
-define_label_cluster <- function(predict, gt){
-  df <- data.frame (labels = gt,
-                    cluster = predict
+define_label_cluster <- function(predicted, ground_truth){
+  df <- data.frame (labels = ground_truth,
+                    cluster = predicted
   )
   
   cluster_label <- df %>% group_by(cluster, labels) %>% 
@@ -511,20 +565,52 @@ define_label_cluster <- function(predict, gt){
     mutate(freq_by_cluster = total_count / sum(total_count)) %>%
     filter(freq_by_cluster == max(freq_by_cluster)) 
   
-  # 
-  return(sapply(df$cluster, function(s) cluster_label[cluster_label$cluster == s,]$labels))
+  cluster_label <- cluster_label[, -which(names(cluster_label) 
+                         %in% c("total_count","freq_by_cluster"))]
+  cluster_label <- as.data.frame(cluster_label)
+  return(cluster_label)
+  
+}
+
+cluster_predicted_label <- function(model, predicted){
+  for (c in model$cluster_label$cluster){
+    clabel <- filter(model$cluster_label, cluster == c)
+    predicted[predicted==clabel$cluster]<-as.character(clabel$labels)
+    
+  }
+  return(predicted)
+  
+}
+
+define_label_cluster2 <- function(predicted, gt){
+  df <- data.frame (labels = gt,
+                    cluster = predicted
+  )
+  
+  cluster_label <- df %>% group_by(cluster, labels) %>% 
+    summarise(total_count=n(),.groups = "drop_last") %>%
+    mutate(freq_by_cluster = total_count / sum(total_count)) %>%
+    filter(freq_by_cluster == max(freq_by_cluster)) 
+  
+  return(sapply(df$cluster, 
+                function(s) cluster_label[cluster_label$cluster == s,]$labels))
   
 }
 
 accuracy_model <- function(model, gt){
   predict_clust <- dtwclust::predict(model, model$datalist)
-  cluster_labeled <- define_label_cluster(predict_clust, gt)
+  cluster_labeled <- cluster_predicted_label(model, predict_clust)
   hits <- as.integer(gt == cluster_labeled)
   acc <- sum(hits)/length(hits)
   return(acc)
 }
+predicted <-dtwclust::predict(best_clusters[[1]])
+accuracy_model2 <- function(model, values){
+  predict_clust <- dtwclust::predict(model, values)
+  return(predict_clust)
+}
 
-band_analysis_cluster <- function(samples, bands, max_nf){
+clusters_by_bands_combination <- function(samples, bands, max_nf){
   
   combns_hcluster <- list()
   
@@ -546,6 +632,10 @@ band_analysis_cluster <- function(samples, bands, max_nf){
         
       )
       dendro$bands <- comb_bands
+      ground_truth <- factor(samples$label)
+      predicted <- dtwclust::predict(dendro, values)
+      dendro$cluster_label <- define_label_cluster(predicted, ground_truth)
+      
       combns_hcluster <- append(combns_hcluster,list(dendro))
       
     }
@@ -555,11 +645,329 @@ band_analysis_cluster <- function(samples, bands, max_nf){
   
 }
 
+cluster_by_band <- function(clusters, bands){
+  count = 1
+  for(c in clusters){
+    tband <- paste(c$bands, collapse = "/")
+    if(tband == bands){
+      return(count)
+    }
+    count <- count + 1
+  }
+  return(NULL)
+}
 
+
+best_clusters <- function(score, clusters){
+  bclusters <- list()
+  voting <- data.frame(select(score,contains("best")))
+  cols <- colnames(voting)
+  for(col in cols){
+    bbands<- score[which.max(voting[, col]),]$cbands
+    
+    cpos <- cluster_by_band(clusters, bbands)
+    model <- clusters[[cpos]]
+    bclusters <- append(bclusters, list(model))
+  }
+  return(bclusters)
+}
+
+
+
+accuracy_analysis <- function(samples, clusters, start_date, end_date, path){
+  tiles <- unique(samples$tile)
+  
+  acc_df <- data.frame(band=character(0),
+                       acc=numeric(0),
+                       tile=character(0),
+                       start_date=date,
+                       end_date=date)
+  
+  for(model in clusters){
+    for(tile in tiles){
+      print(tile)
+      tsamples <- samples[samples$tile == tile,]
+      tsamples <-subset_by_date(tsamples, start_date,end_date)
+      ts <- sits_values(tsamples, model$bands, format = "cases_dates_bands")
+      gt <- factor(tsamples$label)
+      predict_clust <- accuracy_model2(model, ts)
+      cluster_labeled <- cluster_predicted_label(model, predict_clust)
+      hits <- as.integer(gt == cluster_labeled)
+      acc_cluster <- sum(hits)/length(hits)
+      bands_cluster <- paste(model$bands, collapse = "/") 
+      print(bands_cluster)
+      acc_save <- data.frame(
+        band=bands_cluster,
+        acc = acc_cluster,
+        tile = tile,
+        start_date = start_date,
+        end_date = end_date
+      )
+      acc_df <- rbind(acc_df, acc_save)
+      
+      
+      
+      tosave <- tsamples[, -which(names(samples) == "time_series")]
+      tosave$cluster <- predict_clust
+      tosave$cluster_label <- cluster_labeled
+      nametosave <- paste(model$bands, collapse = "-")
+      nametosave <- paste("cluster",nametosave,sep="_")
+      nametosave <- paste(nametosave,tile, sep="_")
+      nametosave <- paste(nametosave, start_date, end_date, sep="-")
+      nametosave <- paste(path, nametosave,sep="")
+      nametosave <- paste(nametosave,"csv",sep=".")
+      write.csv(tosave, nametosave, row.names=TRUE)
+      
+      nameacc <- paste("acc", start_date, end_date, sep="_")
+      nameacc <- paste(path,nameacc, sep="")
+      nameacc <- paste(nameacc,"csv", sep=".")
+      tosave <- as.data.frame(tosave)
+      write.csv(acc_df, nameacc, row.names=TRUE)
+      
+    
+    }
+    
+  }
+  return(acc_df)
+  
+}
+for(model in best_clusters_list){
+  print(model$bands)
+  
+}
+filter_NDVI <- function(sent_cube, samples){
+  
+  tiles <- sent_cube$tile
+  
+  input_all_filtered <- samples[0, ] 
+  
+  for (tile in tiles){
+    row <- dplyr::filter(sent_cube, tile == tile)
+    dates <-  (row$file_info[[1]]$date[row$file_info[[1]]$cloud_cover < 5.0 & row$file_info[[1]]$band == "NDVI"])
+    dates <- dates[dates %in% input_data.tb$time_series[[1]]$Index]
+    
+    input_forest <- filter_vband(samples, dates[1], 0.60, 1,"Floresta", tile)
+    input_deforestation <- filter_vband(samples, dates[1], -1, 0.865,"Desmatamento", tile)
+    for (i in 2:length(dates)){
+      input_forest <- filter_vband(input_forest, dates[i], 0.60, 1,"Floresta", tile)
+      
+      input_deforestation <- filter_vband(input_deforestation, dates[i], -1, 0.865,"Desmatamento", tile)
+    } 
+    input_all_filtered <- rbind(input_all_filtered, input_forest)
+    input_all_filtered <- rbind(input_all_filtered, input_deforestation)
+  }
+  return(input_all_filtered)
+}
+
+bynary_classification_metrics <- function(predicted, actual){
+  print("binary")
+  cm <- table(predicted, actual)
+  print(cm)
+  print(head(predicted))
+  print(head(actual))
+  ACC <- sum(cm[1], cm[4]) / sum(cm[1:4])
+  PREC <- cm[4] / sum(cm[4], cm[2])
+  SENS <- cm[4] / sum(cm[4], cm[3])
+  F1 <- (2 * (SENS * PREC))/(SENS + PREC)
+  SPEC <- cm[1] / sum(cm[1], cm[2])
+  
+  ACC_F <-  cm["Forest", "Forest"] / sum(cm["Forest",]) 
+  ACC_D <-  cm["Deforestation", "Deforestation"] / sum(cm["Deforestation",])
+  
+  metrics <- data.frame(ACC,PREC,SENS,F1,SPEC,ACC_F,ACC_D)
+  
+ return(metrics)
+  
+}
+clusters <- readRDS("../data/rds/best_clusters_list.rds")
+clustering_metrics <- function(model, ground_truth){
+  vi_evaluators <- cvi_evaluators("valid", ground.truth = ground_truth)
+  score_fun <- vi_evaluators$score
+  metrics <- score_fun(list(model))
+  metrics = data.frame(metrics)
+  bands <- paste(model$bands, collapse = "/") 
+  metrics <- cbind(bands, metrics)
+  return(metrics)
+  
+}
+
+classification_metrics <- function(model, ground_truth){
+  predicted <- dtwclust::predict(model, model$datalist)
+  predicted <- cluster_predicted_label(model, predicted)
+  cmetrics <-bynary_classification_metrics(predicted, ground_truth)
+  bands <- paste(model$bands, collapse = "/") 
+  cmetrics <- cbind(bands,cmetrics)
+  return(cmetrics)
+}
+
+
+
+models_metrics <- function(models, samples){
+  ground_truth <- factor(samples$label)
+  cluster_metrics <- lapply(models, clustering_metrics, ground_truth)
+  cluster_metrics <- bind_rows(cluster_metrics)
+  bclass_metrics  <- lapply(models, classification_metrics, ground_truth)
+  bclass_metrics <- bind_rows(bclass_metrics)
+  metrics <- bind_cols(cluster_metrics, bclass_metrics, .id = "bands")
+  names(metrics)[names(metrics) == "bands...1"] <- "bands"
+  metrics <- metrics[, -which(names(metrics) %in% c(".id", "bands...14"))]
+  return(metrics)
+  
+}
+
+
+model_metrics <- function(hclusters, samples){
+  gt <- factor(samples$label)
+  vi_evaluators <- cvi_evaluators("valid", ground.truth = gt)
+  score_fun <- vi_evaluators$score
+  metrics <- score_fun(hclusters)
+  ACC <- sapply(hclusters,accuracy_model,gt=gt)
+  metrics <- cbind(metrics, ACC)
+  score <- as.data.frame(metrics)
+  cbands <- c()
+  n_bands <- c()
+  inte <- 0
+  for(nf in 1:n_comb){
+    comb <-combn(bands,nf)
+    for(col in 1:ncol(comb)){
+      cbands <- append(cbands, paste(comb[,col],collapse='/'))
+      n_bands <- append(n_bands, nf)
+    }
+  }
+  score <- cbind(score, cbands)
+  score <- cbind(score, n_bands)
+  
+  score <- best_model_voting(score)
+  
+  for(i in 1:n_comb){
+    score <- best_model_voting(score,i)
+  }
+
+  return(score)
+}
+
+prediction_test <- function(samples,
+                            model,
+                            start_date,
+                            end_date,
+                            path,
+                            tile_train = NULL){
+  
+  prediction_df <- data.frame(
+    start_date = start_date,
+    end_date = end_date,
+    bands = paste(model$bands, collapse = "-")
+  )
+  
+  tsamples <-subset_by_date(samples, start_date,end_date)
+  ts <- sits_values(tsamples, model$bands, format = "cases_dates_bands")
+  predicted <- dtwclust::predict(model, ts)
+  ground_truth <- factor(tsamples$label)
+  predicted_labeled <- cluster_predicted_label(model, predicted)
+  
+  
+  samples_save <- tsamples[, -which(names(tsamples) == "time_series")]
+  samples_save$cluster_prediction <- predicted
+  samples_save$cluster_labeled <- predicted_labeled
+  nametosave <- paste(model$bands, collapse = "-")
+  nametosave <- paste("cluster",nametosave,sep="_")
+  nametosave <- paste(nametosave, start_date, end_date, sep="-")
+  nametosave <- paste(path, nametosave,sep="/")
+  nametosave <- paste(nametosave,"csv",sep=".")
+  write.csv(samples_save, nametosave, row.names=TRUE)
+  
+  test_samples <- samples_save
+  
+  if(!is.null(tile_train)){
+    test_samples <- samples_save[samples_save$tile != tile_train,]
+    train_samples <- samples_save[samples_save$tile == tile_train,]
+    
+    metrics <- bynary_classification_metrics(samples_save$cluster_labeled, samples_save$label)
+    prediction_df$type <- "Train"
+    train <- cbind(prediction_df, metrics)
+  }
+  
+  metrics <- bynary_classification_metrics(test_samples$cluster_labeled, test_samples$label)
+  prediction_df$type <- "Generalization(Test)"  
+  test <- cbind(prediction_df, metrics)
+  
+  if(!is.null(tile_train)){
+    return_df <- rbind(train, test)
+  }
+  else{
+    return_df <- test
+  }
+  
+  return(return_df)
+
+}
+
+prediction_metrics_by_tile <- function(samples_predicted, start_date, end_date, bands){
+  tiles <- unique(samples_predicted$tile)
+  prediction_df <- data.frame(
+    start_date = start_date,
+    end_date = end_date,
+    bands = bands
+  )
+  test_acc <- data.frame(tile=character(0),
+                       start_date=date,
+                       end_date=date,
+                       band=character(0),
+                       ACC=numeric(0),
+                       PREC=numeric(0),
+                       SENS=numeric(0),
+                       F1=numeric(0),
+                       SPEC=numeric(0),
+                       ACC_F=numeric(0),
+                       ACC_D=numeric(0)
+                       )
+  
+  for (tile in tiles){
+    print(tile)
+    samples_by_tile <- samples_predicted[samples_predicted$tile == tile,]
+    print(head(samples_by_tile))
+    
+    print(head(samples_by_tile$cluster_labeled))
+    print(head(samples_by_tile$label))
+    metrics <- bynary_classification_metrics(
+    samples_by_tile$cluster_labeled, samples_by_tile$label)
+    tile_metric <- data.frame(tile=tile,
+                           start_date=start_date,
+                           end_date=end_date,
+                           band=bands)
+    tile_metric <-cbind(tile_metric, metrics)
+    test_acc <- rbind(test_acc,tile_metric)
+  }
+  return(test_acc)
+}
+
+test <- read.csv("../data/csv/predicted/B04-B07-B12-NDVI-EVI/cluster_B12-NDVI-2020-07-27-2021-07-12.csv")
+
+
+list.files("../data/rds/samples/2019-2021")
+
+my_tibble <- tibble(
+  longitude = numeric(),
+  latitude = numeric(),
+  start_date = date(),
+  end_date = character(),
+  label = character(),
+  cube = character(),
+  time_series = list()
+)
+path <- "../data/rds/samples/2019-2021"
+for(file in list.files(path)){
+  path_load <- paste(path, file, sep = "/")
+  s <- readRDS(path_load)
+  my_tibble <- rbind(my_tibble, s)
+  
+  
+}
 # =============== Execution ====================================================
 
 # Read a samples csv file. 
-samples.df <- read.csv(file = '/home/leonardo.vieira/git/Time-Series-Analysis/data/csv/samples_def2.csv')
+score_metrics2 <- read.csv(file =
+    '../data/csv/metrics_score.csv')
 
 
 # Create a S2-SEN2COR_10_16D_STK-1 sits cube.
@@ -568,34 +976,117 @@ sent_cube <- sits_cube(
   collection    = "S2-16D-2",
   bands         = c("B01", "B02","B03","B04","B05","B06",
                     "B07","B08", "B8A", "B09","B11", "B12", "NDVI", "EVI", "CLOUD"),
-  tiles         = c("012014", "012015", "012016", "013014", "013015", "013016"
-                    ,"014014", "014015", "014016"), 
+  tiles         = c("011013","011014","011015","011016","011017","012013",
+                    "012014", "012015", "012016","012017","013013","013014",
+                    "013015", "013016","013017","014013","014017","014014", 
+                    "014015", "014016","015013", "015014","015015","015016",
+                    "015017"), 
   start_date    = "2018-07-24", 
   end_date      = "2021-07-16" 
 )
 
-
-# Get the time series from sits cube
+path <- "/home/leonardo.vieira/git/Time-Series-Analysis/data/csv/samples_D-2019-2021.csv"
 input_data.tb <- sits_get_data(
   cube = sent_cube, 
-  samples = "/home/leonardo.vieira/git/Time-Series-Analysis/data/csv/S2-16D/samples_S2-16D-2-p1.csv",
+  samples = path,
   bands      = c("B01", "B02","B03","B04","B05","B06",
                  "B07","B08","B8A","B09","B11", "B12", "NDVI", "EVI", "CLOUD"),
   multicores = 16,
   output_dir = "/home/leonardo.vieira/git/Time-Series-Analysis/data/temps"
 )
 
+
+
+path <- "/home/leonardo.vieira/git/Time-Series-Analysis/data/csv/samples-2019-2021"
+
+list.files(path)
+count <- 1
+for(file in list.files(path)){
+  path_save <- "/home/leonardo.vieira/git/Time-Series-Analysis/data/rds"
+  path_samples <- paste(path, file, sep="/")
+  input_data.tb <- sits_get_data(
+    cube = sent_cube, 
+    samples = path_samples,
+    bands      = c("B01", "B02","B03","B04","B05","B06",
+                   "B07","B08","B8A","B09","B11", "B12", "NDVI", "EVI", "CLOUD"),
+    multicores = 16,
+    output_dir = "/home/leonardo.vieira/git/Time-Series-Analysis/data/temps"
+  )
+  to_save <- paste(path_save, count, sep = "/")
+  to_save <- paste(to_save, "rds", sep = ".")
+  
+  saveRDS(input_data.tb, file = to_save)
+  count <- count + 1
+}
+
+input_data.tb <- sits_get_data(
+  cube = sent_cube, 
+  samples = path,
+  bands      = c("B01", "B02","B03","B04","B05","B06",
+                 "B07","B08","B8A","B09","B11", "B12", "NDVI", "EVI", "CLOUD"),
+  multicores = 16,
+  output_dir = "/home/leonardo.vieira/git/Time-Series-Analysis/data/temps"
+)
+
+saveRDS(hclusters, file = "../data/rds/list_clusters.rds")
+
+
+
 # Add tile information on data frame
-input_data.tb <- add_tile(input_data.tb, "/home/leonardo.vieira/git/Time-Series-Analysis/data/shp/roi.shp")
+input_data.tb <- add_tile(input_data.tb, 
+              "/home/leonardo.vieira/git/Time-Series-Analysis/data/shp/roi.shp")
 
 # Save the data set in a rds file
-saveRDS(input_data.tb, file = "../data/rds/samples_update.rds")
+saveRDS(hclusters, file = "../data/rds/list_clusters.rds")
 
-saveRDS(samples, file = "../data/rds/samples.rds")
+# Filter by NDVI
+tiles <- sent_cube$tile
+
+input_all_filtered <- samples[0, ] 
+
+for (tile in tiles){
+  row <- dplyr::filter(sent_cube, tile == tile)
+  dates <-  (row$file_info[[1]]$date[row$file_info[[1]]$cloud_cover < 5.0 & row$file_info[[1]]$band == "NDVI"])
+  input_forest <- filter_vband(samples, dates[1], 0.60, 1,"Floresta", tile)
+  input_deforestation <- filter_vband(samples, dates[1], -1, 0.865,"Desmatamento", tile)
+  for (i in 2:length(dates)){
+    input_forest <- filter_vband(input_forest, dates[i], 0.60, 1,"Floresta", tile)
+    
+    input_deforestation <- filter_vband(input_deforestation, dates[i], -1, 0.865,"Desmatamento", tile)
+  } 
+  input_all_filtered <- rbind(input_all_filtered, input_forest)
+  input_all_filtered <- rbind(input_all_filtered, input_deforestation)
+}
+
+input_all_filtered
+saveRDS(best_clusters, file = "../data/rds/B04-B07-B12-NDVI-EVI/best_clusters.rds")
+
+
+# Get rasters
+
+tiles <- sent_cube$tile
+
+path <- "../data/imagens/raster/SD-16D/"
+
+tiles <- c("012017","013013","013017","014013","014017",
+           "011013","011014","011015","011016","011017",
+           "015013","015014","015015","015016","015017")
+tiles <- c("012013")
+
+for(t in tiles){
+  row <- dplyr::filter(sent_cube, tile == t)
+  date <- (row$file_info[[1]]$date[row$file_info[[1]]$cloud_cover
+                                   == min(
+                                     row$file_info[[1]]$cloud_cover)
+                                   & row$file_info[[1]]$band == "NDVI"])
+  download_raster(sent_cube, date[[1]], c("B02","B03","B04","NDVI"), t, path)
+}
 
 # Read previous data saved
-input_data.tb <- readRDS("../data/rds/samples_S2-16D.rds")
-samples <- readRDS("../data/rds/samples_S2-16D.rds")
+samples <- readRDS("../data/rds/samples.rds")
+samples$label[samples$label == 'Floresta'] <- 'Forest'
+samples$label[samples$label == 'Desmatamento'] <- 'Deforestation'
+
 patterns <- sits_patterns(samples)
 
 # Create shape file from samples
@@ -603,27 +1094,30 @@ test_sf<-sits_as_sf(test_out)
 st_write(test_sf, "../data/shp/test.shp")
 
 # found image to analysis
-
 test$file_info %>% lapply(function(x) filter(x, date == "2017-08-13"))
 
 # Get rasters
-dates <- c("2017-09-14", "2017-08-13", "2018-06-10")
-for (d in dates){
-  for(tile in tiles){
-    download_raster(sent_cube, d, c("B12"), "078094", "../data/imagens/raster/")  
-  }  
-}
 
-for (row in head(input_data.tb, 1)){
-  print(row)
+for(t in sent_cube$tile){
+  row <- dplyr::filter(sent_cube, tile == t)
+  date <- (row$file_info[[1]]$date[row$file_info[[1]]$cloud_cover
+                                   == min(
+                                     row$file_info[[1]]$cloud_cover)
+                                   & row$file_info[[1]]$band == "NDVI"])
+  download_raster(sent_cube, date[[1]], c("B02","B03","B04","NDVI"), t, "../data/imagens/raster/")
 }
 
 library(dplyr)
 nrow(samples[samples$label == 'Forest', ])
 nrow(samples[samples$label == 'Deforested', ])
 
+
 # ====================== Statistics ============================================
 # Deforestation
+
+best_clusters <- readRDS("../data/rds/best_clusters_list.rds")
+
+
 band_tb <- sits_select(samples[samples$label == "Deforested",], "NDVI")
 ts <- band_tb$time_series
 dt_byrows <- data.table::data.table(dplyr::bind_rows(ts))
@@ -653,25 +1147,12 @@ for (tile in tiles){
 }
 st_write(sits_as_sf(a),"../data/shp/out_4.shp") 
 
-forest_filtered <- filter_by_value_date(
-  input_data.tb, "2017-08-13", 0.65, 1.0, "Floresta")
-deforestation_filtered <- filter_by_value_date(
-  input_data.tb, "2017-08-13", 0.0, 0.856, "Desmatamento")
-
-input_data.filtered <- rbind(forest_filtered, deforestation_filtered)
-dates <- input_data.tb$time_series[[1]]$Index
-
-list_samples <- list()
-
-floresta.tb <- filter(input_data.tb, label == "Floresta")
-
-
 tiles <- sent_cube$tile
 
 input_all_filtered <- samples[0, ] 
 
 for (tile in tiles){
-  row <- dplyr::filter(sent_cube, tile == t)
+  row <- dplyr::filter(sent_cube, tile == tile)
   dates <-  (row$file_info[[1]]$date[row$file_info[[1]]$cloud_cover < 5.0 & row$file_info[[1]]$band == "NDVI"])
   input_forest <- filter_vband(samples, dates[1], 0.60, 1,"Floresta", tile)
   input_deforestation <- filter_vband(samples, dates[1], -1, 0.865,"Desmatamento", tile)
@@ -685,115 +1166,9 @@ for (tile in tiles){
 }
 
 input_all_filtered
-patterns2 <- sits_patterns(samples)
-plot_patterns(patterns2)
-filter(floresta.tb, sample_ok == TRUE)
+saveRDS(input_all_filtered, file = "../data/rds/samples_FILTER.rds")
 
-# Plot time series * Not work yet *
-tiles = c("077095", "078095", "079095", "077094", "078094",
-          "079094", "077093", "078093", "079093" )
-
-for (t in tiles) {
-  save_plot_ts(input_all_filtered, "NDVI", t, "../data/imagens/all_filtered/","Floresta")
-}
-
-for (t in tiles) {
-  save_plot_ts(input_all_filtered, "NDVI", t, "../data/imagens/all_filtered/","Desmatamento")
-}
-
-samples$label[samples$label == 'Floresta'] <- 'Forest'
-samples$label[samples$label == 'Desmatamento'] <- 'Deforestation'
-head(samples)
-test <- head(input_data.filtered, 5)
-my.table[, lapply(.SD, mean), by=gbc]
-# helper
-
-# merge two tibbles in one bind_rows(tibble1, tibble 2)
-
-saveRDS(input_all_filtered, file = "../data/rds/samples.rds")
-gp <- ggplot2::ggplot(test, ggplot2::aes(x = Index, y = c(med_NDVI, qt75_NDVI, var_NDVI))) +
-  ggplot2::geom_line()
-
-graphics::plot(gp)
-
-
-patterns
-
-stats <- stats_ts(samples)
-
-plot.df <- purrr::pmap_dfr(
-  list(test$label, test$time_series),
-  function(label, ts) {
-    lb <- as.character(label)
-    # extract the time series and convert
-    df <- tibble::tibble(Time = ts$Index, ts[-1], Pattern = lb)
-    return(df)
-  }
-)
-
-
-patterns$time_series[[1]]$Index
-
-plot(sent_cube,
-     red = "B04", blue = "B02", green = "B03",
-     date = "2018-07-28"
-)
-
-get_ts <- function(path){
-  df <- head(samples,0)
-  count <- 2
-  save_path <- "/home/leonardo.vieira/git/Time-Series-Analysis/data/rds/"
-  for(f in list.files(path)){
-    file_dir <- paste(path, f, sep="")
-    count <- count + 1
-    print(file_dir)
-    input_data.tb <- sits_get_data(
-      cube = sent_cube, 
-      samples = file_dir,
-      bands      = c("B01", "B02","B03","B04","B05","B06",
-                     "B07","B08","B8A","B09","B11", "B12", "NDVI", "EVI", "CLOUD"),
-      multicores = 16,
-      output_dir = "/home/leonardo.vieira/git/Time-Series-Analysis/data/temps"
-    )
-    df <- rbind(df, input_data.tb)
-    save_file <- paste(save_path, as.character(count), sep ="")
-    saveRDS(input_data.tb, file = paste(save_file,".rds", sep="") )
-    
-  }
-  saveRDS(df, file = "/home/leonardo.vieira/git/Time-Series-Analysis/data/rds/samples-S2-16D.rds")
-}
-
-get_ts("/home/leonardo.vieira/git/Time-Series-Analysis/data/csv/S2-16D/")
-
-
-
-for(t in sent_cube$tile){
-  row <- dplyr::filter(sent_cube, tile == t)
-  date <- (row$file_info[[1]]$date[row$file_info[[1]]$cloud_cover
-                                   == min(
-                                     row$file_info[[1]]$cloud_cover)
-                                   & row$file_info[[1]]$band == "NDVI"])
-  download_raster(sent_cube, date[[1]], c("B02","B03","B04","NDVI"), t, "../data/imagens/raster/")
-}
-
-bands <- c("B04","B07","B11","NDVI", "EVI")
-
-values <- sits_values(samples_test, bands, format = "cases_dates_bands")
-
-# call dtwclust and get the resulting dendrogram
-
-for(nf in 1:5){
-  combinations <- combn(bands,nf)
-  print(length((combinations[1,])))
-}
-
-
-
-
-
-
-  
-# ----------
+# ================================= CLUSTERING =================================
 samples_013015 <- samples[samples$tile == "013015",]
 samples_013015_1y <-subset_by_date (samples_013015, "2018-07-28","2019-07-12")
 values <- sits_values(samples_013015_1y, "NDVI", format = "cases_dates_bands")
@@ -804,8 +1179,6 @@ hclusters <- band_analysis_cluster(samples_013015_1y, bands, 5)
 gt <- factor(samples_013015_1y$label)
 vi_evaluators <- cvi_evaluators("valid", ground.truth = gt)
 score_fun <- vi_evaluators$score
-
-
 
 hclusters[[1]]$cluster$bands <- bands
 
@@ -861,3 +1234,104 @@ accuracy_model
 
 metrics <- cbind(metrics, ACC)
 write.csv(metrics, "/home/leonardo.vieira/git/Time-Series-Analysis/data/csv/metrics.csv", row.names=TRUE)
+
+
+select(score,contains("best"))
+x <- data
+xx$indexOfMax <- apply(x, 1, which.max)
+x$colName <- colnames(x)[x$indexOfMax]
+
+score[which.max(score$best_model_1),]$cbands
+
+
+plot.df <- purrr::pmap_dfr(
+  list(samples$label, samples$time_series),
+  function(label, ts) {
+    lb <- as.character(label)
+    # extract the time series and convert
+    df <- tibble::tibble(Time = ts$Index, ts[-1], Band = lb)
+    return(df)
+  }
+)
+
+
+plot.df <- tidyr::pivot_longer(plot.df, cols = sits_bands(samples))
+
+p <- ggplot(plot.df, aes(x=name, y=value, color=name)) +
+  geom_boxplot()  + ggplot2::facet_wrap(~Band)
+
+png("../data/imagens/papper/box_plot_samples.png")
+print(p)
+dev.off()
+
+ggsave("../data/imagens/papper/blox_plot_samples.pdf")
+ggsave("../data/imagens/papper/blox_plot_samples.png")
+
+
+gt <- factor(samples_013015_1y$label)
+vi_evaluators <- cvi_evaluators("valid", ground.truth = gt)
+score_fun <- vi_evaluators$score
+
+metrics <- score_fun(hclusters)
+
+ACC <- sapply(hclusters,accuracy_model,gt=gt)
+metrics <- cbind(metrics, ACC)
+score <- as.data.frame(metrics)
+cbands <- c()
+n_bands <- c()
+inte <- 0
+for(nf in 1:5){
+  comb <-combn(bands,nf)
+  for(col in 1:ncol(comb)){
+    cbands <- append(cbands, paste(comb[,col],collapse='/'))
+    n_bands <- append(n_bands, nf)
+  }
+}
+score <- cbind(score, cbands)
+score <- cbind(score, n_bands)
+
+score <- best_model_voting(score)
+score <- best_model_voting(score,1)
+score <- best_model_voting(score,2)
+score <- best_model_voting(score,3)
+score <- best_model_voting(score,4)
+score <- best_model_voting(score,5)
+
+score
+write.csv(acc2_tiles, "../data/csv/acc.csv", row.names=TRUE)
+write.csv(acc_tiles, "../data/csv/acc2.csv", row.names=TRUE)
+
+
+cm <- table(predicted, actual)
+
+ACC <- sum(cm[1], cm[4]) / sum(cm[1:4])
+PREC <- cm[4] / sum(cm[4], cm[2])
+SENS <- cm[4] / sum(cm[4], cm[3])
+F1 <- (2 * (sensitivity * precision))/(sensitivity + precision)
+SPEC <- cm[1] / sum(cm[1], cm[2])
+acc_Forest <-  cm["Forest", "Forest"]/ sum(cm["Forest",]) 
+acc_Deforestation <-  cm["Deforestation", "Deforestation"] / sum(cm["Deforestation",])
+
+majority <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+metrics
+
+
+best_clusters <- readRDS("../data/rds/models/B04-B07-B12-NDVI-EVI/best_clusters.rds")
+
+train_test_eval <- list()
+
+for(i in 1:length(best_clusters)){
+  pred <- prediction_test(samples,
+                  best_clusters[[i]],
+                  "2018-07-28",
+                  "2019-07-12",
+                  "013015",
+                  "../../data/csv/predicted/B04-B07-B12-NDVI-EVI")
+  
+  train_test_eval <- list.append(train_test_eval, pred)
+}
+

@@ -69,7 +69,7 @@ To all values, we can observe a distortion between the median/mean and the maxim
 
 Above is presented a box plot for each band.  
  
-```{r}
+```{r setup0, warning=FALSE}
 plot_box(samples)
 ```
 
@@ -79,7 +79,7 @@ expected considering the characteristics of the classes. The Amazon forest prese
 
 Now, we are analyzing the behavior of the bands, considering the time variation. To simplify the visualization of the charts, we analyzed the two indexes (NDVI and EVI). Above, we plot two charts of the median and the quartiles. The command above calculated some statistics from the sample data: Mean, Median, Quartil 25%, Quartil 75%, Median, Standard deviation, and Correlation.
 
-```{r}
+```{r setup1, warning=FALSE}
 stats <- stats_ts(samples)
 ```
 
@@ -111,10 +111,9 @@ The resulting patterns allow us to analyze the behavior of the deforestation and
 
 The previous patterns are sound indicative of the class's behavior. Thus, their Correlation can support the previous analysis. The code below calculates the intra-class band correlation and plots it. Here, we desire to analyze numerically the relationship between the pattern bands of deforestation and Forest classes separately.
 
-```{r}
+```{r setup3, warning=FALSE}
 cor <- corr_ts(patterns)
 plot_corr_matrix(cor)
-  
 ```
 
 The intra-class Correlation of the band's patterns to forest patterns reveals a high positive correlation to all bands except the NDVI band, which presents a negative correlation to other bands. We can separate four groups with a  high positive correlation in the deforestation class: 1 (B01 to B05), 2 (B06 to B09), 3 (B11 to B12), and 4 (NDVI and EVI). Analyze the groups against each other: Group 1 practically has no Correlation to other groups; Group 2 presents a negative correlation to 3 and a positive correlation to 4; Group 3 presents a negative Correlation to 4. The previous analysis covers group 4 correlation against other groups. 
@@ -147,47 +146,108 @@ The previous intra-class Correlation analysis reveals that some band patterns ar
 
 *Group 4: Select the bands NDVI and EVI. The NDVI negatively correlates to other bands considering the forest class (Intra-class Correlation chart), and the band presents the lowest Intra-class Correlation. The EVI is also an index vegetation that presents a similar behavior in the deforestation class and negatively correlates to NDVI in the forest class.
 
-The analysis generates a list of selected bands (B05, B07, B11, NDVI, and EVI). The subsequent analysis uses this list of bands to verify how a hierarchical clustering method behaves with a distinct combination of the band list. The code below generates all possible combinations and produces one model by combination.
+The analysis generates a list of selected bands (B05, B07, B11, NDVI, and EVI). The subsequent analysis uses this list of bands to verify how a hierarchical clustering method behaves with a distinct combination of the band list. In the other analysis, we use integral time series, all periods, and all sample coordinates. However, here, we select the first year of the period and the samples located on the central tile of the interest region because the subsequent analysis aims to test the generalization of the generated models. The code below generates all possible band list combinations and produces one model by combination using the same hierarchical cluster configuration. 
 
 
 ```{r}
-bands <- c("B05", "B07","B11","NDVI", "EVI")
+bands <- c("B04", "B07","B12","NDVI", "EVI")
 samples_013015 <- samples[samples$tile == "013015",]
 samples_013015_1y <-subset_by_date (samples_013015, "2018-07-28","2019-07-12")
-hclusters <- band_analysis_cluster(samples_013015_1y, bands, 5)
+hclusters <- clusters_by_bands_combination(samples_013015_1y, bands, 5)
+```
+
+The evaluation of the clustering uses distinct cluster metrics to define the quality of each model. Also, we include in the analysis the model's accuracy considering the labeled target. To calculate the accuracy, we define a label for each cluster based on the majority, where the cluster label will be the class with more members in the cluster. We formulated a voting schema through the metrics where each metric contributes with one single vote. The vote of the model depends on how the metric works. In some metrics, the target is to select the maximum between all band combinations by the given values; in others, the objective is to select the minimum value. In the code below, we calculate distinct cluster metrics to evaluate the quality of each model and voting.  
+
+```{r, setup4, warning=FALSE}
+metrics_score <- models_metrics(hclusters, samples_013015_1y)
+metrics_score
+```
+
+```{r, setup5, warning=FALSE}
+best <- metrics_score[voting_best(metrics_score),]
+best_clusters <- list()
+best_clusters <- append(best_clusters, list(hclusters[[voting_best(metrics_score)]]))
+best
+```
+
+```{r, setup6, warning=FALSE}
+
+
+best <- rbind(best, metrics_score[voting_nbands(metrics_score,1),])
+best <-rbind(best, metrics_score[voting_nbands(metrics_score,3),])
+best <-rbind(best, metrics_score[voting_nbands(metrics_score,4),])
+best <-rbind(best, metrics_score[voting_nbands(metrics_score,5),])
+
+best_clusters <- append(best_clusters, list(
+  hclusters[[voting_nbands(metrics_score,1)]]))
+best_clusters <- append(best_clusters, list(
+  hclusters[[voting_nbands(metrics_score,3)]]))
+best_clusters <- append(best_clusters, list(
+  hclusters[[voting_nbands(metrics_score,4)]]))
+best_clusters <- append(best_clusters, list(
+  hclusters[[voting_nbands(metrics_score,5)]]))
+
+best
+```
+
+```{r}
+
+train_test_eval <- list()
+
+for(i in 1:length(best_clusters)){
+  pred <- prediction_test(samples,
+                  best_clusters[[i]],
+                  "2018-07-28",
+                  "2019-07-12",
+                  "../../data/csv/predicted/B04-B07-B12-NDVI-EVI",
+                  "013015")
+  
+  train_test_eval <- append(train_test_eval, list(pred))
+}
 ```
 
 
 ```{r}
-gt <- factor(samples_013015_1y$label)
-vi_evaluators <- cvi_evaluators("valid", ground.truth = gt)
-score_fun <- vi_evaluators$score
 
-metrics <- score_fun(hclusters)
+train_test_eval2 <- list()
 
-ACC <- sapply(hclusters,accuracy_model,gt=gt)
-metrics <- cbind(metrics, ACC)
-score <- as.data.frame(metrics)
-cbands <- c()
-n_bands <- c()
-inte <- 0
-for(nf in 1:5){
-  comb <-combn(bands,nf)
-  for(col in 1:ncol(comb)){
-    cbands <- append(cbands, paste(comb[,col],collapse='/'))
-    n_bands <- append(n_bands, nf)
-  }
+for(i in 1:length(best_clusters)){
+  pred <- prediction_test(samples,
+                  best_clusters[[i]],
+                  "2019-07-28",
+                  "2020-07-11",
+                  "../../data/csv/predicted/B04-B07-B12-NDVI-EVI",
+                  )
+  
+  train_test_eval2 <- append(train_test_eval2, list(pred))
 }
-score <- cbind(score, cbands)
-score <- cbind(score, n_bands)
+```  
 
-score <- best_model_voting(score)
-score <- best_model_voting(score,1)
-score <- best_model_voting(score,2)
-score <- best_model_voting(score,3)
-score <- best_model_voting(score,4)
-score <- best_model_voting(score,5)
+```{r}
 
-score
+train_test_eval3 <- list()
+
+for(i in 1:length(best_clusters)){
+  pred <- prediction_test(samples,
+                  best_clusters[[i]],
+                  "2020-07-27",
+                  "2021-07-12",
+                  "../../data/csv/predicted/B04-B07-B12-NDVI-EVI",
+                  )
+  
+  train_test_eval3 <- append(train_test_eval3, list(pred))
+}
 ```
+
+
+```{r}
+
+best_clusters_list <- readRDS("../../data/rds/best_clusters_list.rds")
+acc2_tiles <- accuracy_analysis(samples, best_clusters_list,
+                               "2018-07-28","2019-07-12", "../../data/csv/B04-B07-B12-NDVI-EVI")
+acc2_tiles
+```
+
+
+
 
