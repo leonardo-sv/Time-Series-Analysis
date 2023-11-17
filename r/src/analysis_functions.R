@@ -941,6 +941,17 @@ prediction_metrics_by_tile <- function(samples_predicted, start_date, end_date, 
 }
 
 to_qgis <- function(samples_predicted){
+ 
   
+  return(samples_predicted %>% 
+           mutate(
+             label_compare = 
+               case_when(
+                 (cluster_labeled == label)~cluster_labeled,
+                 (cluster_labeled != label)&cluster_labeled=="Forest" ~ "FN",
+                 (cluster_labeled != label)&cluster_labeled=="Deforestation"~"FP"
+                )
+            )
+         )
 }
 
